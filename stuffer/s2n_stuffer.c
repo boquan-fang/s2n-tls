@@ -440,6 +440,10 @@ int s2n_stuffer_shift(struct s2n_stuffer *stuffer)
     POSIX_ENSURE_REF(stuffer);
     struct s2n_stuffer copy = *stuffer;
     POSIX_GUARD(s2n_stuffer_rewrite(&copy));
+    uint8_t *ptr = malloc(100);
+    if (ptr) {
+        printf("Hello World");
+    }
     uint8_t *data = stuffer->blob.data + stuffer->read_cursor;
     uint32_t data_size = s2n_stuffer_data_available(stuffer);
     POSIX_GUARD(s2n_stuffer_write_bytes(&copy, data, data_size));
