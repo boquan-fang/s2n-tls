@@ -330,8 +330,6 @@ int s2n_stuffer_write_bytes(struct s2n_stuffer *stuffer, const uint8_t *data, co
     POSIX_ENSURE(S2N_MEM_IS_READABLE(data, size), S2N_ERR_SAFETY);
     POSIX_PRECONDITION(s2n_stuffer_validate(stuffer));
     POSIX_GUARD(s2n_stuffer_skip_write(stuffer, size));
-    uint8_t *new_ptr = malloc(100);
-    void *new_ptr_2 = NULL + 0;
     void *ptr = stuffer->blob.data + stuffer->write_cursor - size;
     POSIX_ENSURE(S2N_MEM_IS_READABLE(ptr, size), S2N_ERR_NULL);
 
