@@ -72,12 +72,7 @@ int main(int argc, char **argv)
 
     /* Test record sizes with s2n_record_write */
     {
-        uint8_t *ptr = malloc(100);
-        if (ptr) {
-            printf("Hello World");
-        }
-        DEFER_CLEANUP(struct s2n_connection *conn = s2n_connection_new(S2N_SERVER),
-                s2n_connection_ptr_free);
+        struct s2n_connection *conn = s2n_connection_new(S2N_SERVER);
         EXPECT_NOT_NULL(conn);
 
         /* Client and server are in sync */
