@@ -37,19 +37,19 @@ phases:
     on-failure: ABORT
     commands:
       - |    
-          if [[ "$S2N_LIBCRYPTO" == "openssl-1.1.1" ]]; then
-              echo "running task pedantic_valgrind"
-              S2N_DEBUG=true\ 
-              CTEST_OUTPUT_ON_FAILURE=1 \
-              CTEST_MEMORYCHECK_COMMAND_OPTIONS="${CTEST_MEMORYCHECK_COMMAND_OPTIONS_PEDANTIC}" \
-              S2N_VALGRIND=1 \
-              CTEST_PARALLEL_LEVEL=$(nproc) ctest -T memcheck --test-dir build \
-              --timeout 3000 ARGS="-output-on-failure"
-          else
-              S2N_DEBUG=true \
-              CTEST_OUTPUT_ON_FAILURE=1 \
-              CTEST_MEMORYCHECK_COMMAND_OPTIONS="${CTEST_MEMORYCHECK_COMMAND_OPTIONS_REGULAR}" \
-              S2N_VALGRIND=1 \
-              CTEST_PARALLEL_LEVEL=$(nproc) ctest -T memcheck --test-dir build \
-              --timeout 3000 ARGS="-output-on-failure"
-          fi
+        if [[ "$S2N_LIBCRYPTO" == "openssl-1.1.1" ]]; then
+            echo "running task pedantic_valgrind"
+            S2N_DEBUG=true\ 
+            CTEST_OUTPUT_ON_FAILURE=1 \
+            CTEST_MEMORYCHECK_COMMAND_OPTIONS="${CTEST_MEMORYCHECK_COMMAND_OPTIONS_PEDANTIC}" \
+            S2N_VALGRIND=1 \
+            CTEST_PARALLEL_LEVEL=$(nproc) ctest -T memcheck --test-dir build \
+            --timeout 3000 ARGS="-output-on-failure"
+        else
+            S2N_DEBUG=true \
+            CTEST_OUTPUT_ON_FAILURE=1 \
+            CTEST_MEMORYCHECK_COMMAND_OPTIONS="${CTEST_MEMORYCHECK_COMMAND_OPTIONS_REGULAR}" \
+            S2N_VALGRIND=1 \
+            CTEST_PARALLEL_LEVEL=$(nproc) ctest -T memcheck --test-dir build \
+            --timeout 3000 ARGS="-output-on-failure"
+        fi
