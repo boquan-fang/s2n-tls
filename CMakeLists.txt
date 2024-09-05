@@ -658,3 +658,5 @@ set(CTEST_MEMORYCHECK_COMMAND_OPTIONS_PENDANTIC " \
             --undef-value-errors=no \
             --errors-for-leak-kinds=all \
             --suppressions=valgrind.suppressions")
+
+set(CTEST_MEMORYCHECK_TYPE "Valgrind")
