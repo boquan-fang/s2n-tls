@@ -51,5 +51,4 @@ phases:
             CTEST_PARALLEL_LEVEL=$(nproc) ctest -T memcheck --test-dir build \
             --timeout 3000 ARGS="-output-on-failure"
         fi
-      - |
-        cat ./build/Testing/Temporary/MemoryChecker.14.log
+      - cat ./build/Testing/Temporary/MemoryChecker.14.log
