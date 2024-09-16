@@ -104,7 +104,7 @@ batch:
         privileged-mode: true
         variables:
           BUILD_S2N: 'true'
-          GCC_VERSION: '6'
+          GCC_VERSION: '9'
           S2N_LIBCRYPTO: 'awslc'
           TESTS: valgrind
       identifier: s2nValgrindAwslc
