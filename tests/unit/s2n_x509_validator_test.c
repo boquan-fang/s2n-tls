@@ -206,7 +206,7 @@ int main(int argc, char **argv)
         struct s2n_connection *connection = s2n_connection_new(S2N_CLIENT);
         EXPECT_NOT_NULL(connection);
 
-        DEFER_CLEANUP(struct s2n_stuffer cert_chain_stuffer = { 0 }, s2n_stuffer_free);
+        struct s2n_stuffer cert_chain_stuffer = { 0 };
         EXPECT_OK(s2n_test_cert_chain_data_from_pem(connection, S2N_DEFAULT_TEST_CERT_CHAIN, &cert_chain_stuffer));
         uint32_t chain_len = s2n_stuffer_data_available(&cert_chain_stuffer);
         uint8_t *chain_data = s2n_stuffer_raw_read(&cert_chain_stuffer, chain_len);
