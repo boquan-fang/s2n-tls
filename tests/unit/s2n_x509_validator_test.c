@@ -199,30 +199,32 @@ int main(int argc, char **argv)
         s2n_x509_trust_store_wipe(&trust_store);
     };
 
-    /* test validator in unsafe mode */
-    {
-        struct s2n_x509_validator validator;
-        s2n_x509_validator_init_no_x509_validation(&validator);
-        struct s2n_connection *connection = s2n_connection_new(S2N_CLIENT);
-        EXPECT_NOT_NULL(connection);
+    for (int i = 0; i < 100; i ++) {
+        /* test validator in unsafe mode */
+        {
+            struct s2n_x509_validator validator;
+            s2n_x509_validator_init_no_x509_validation(&validator);
+            struct s2n_connection *connection = s2n_connection_new(S2N_CLIENT);
+            EXPECT_NOT_NULL(connection);
 
-        struct s2n_stuffer cert_chain_stuffer = { 0 };
-        EXPECT_OK(s2n_test_cert_chain_data_from_pem(connection, S2N_DEFAULT_TEST_CERT_CHAIN, &cert_chain_stuffer));
-        uint32_t chain_len = s2n_stuffer_data_available(&cert_chain_stuffer);
-        uint8_t *chain_data = s2n_stuffer_raw_read(&cert_chain_stuffer, chain_len);
-        EXPECT_NOT_NULL(chain_data);
+            struct s2n_stuffer cert_chain_stuffer = { 0 };
+            EXPECT_OK(s2n_test_cert_chain_data_from_pem(connection, S2N_DEFAULT_TEST_CERT_CHAIN, &cert_chain_stuffer));
+            uint32_t chain_len = s2n_stuffer_data_available(&cert_chain_stuffer);
+            uint8_t *chain_data = s2n_stuffer_raw_read(&cert_chain_stuffer, chain_len);
+            EXPECT_NOT_NULL(chain_data);
 
-        EXPECT_SUCCESS(s2n_connection_set_cipher_preferences(connection, "20240501"));
+            EXPECT_SUCCESS(s2n_connection_set_cipher_preferences(connection, "20240501"));
 
-        struct s2n_pkey public_key_out;
-        EXPECT_SUCCESS(s2n_pkey_zero_init(&public_key_out));
-        s2n_pkey_type pkey_type = S2N_PKEY_TYPE_UNKNOWN;
-        EXPECT_OK(s2n_x509_validator_validate_cert_chain(&validator, connection, chain_data, chain_len, &pkey_type, &public_key_out));
-        EXPECT_EQUAL(S2N_PKEY_TYPE_RSA, pkey_type);
-        s2n_connection_free(connection);
-        s2n_pkey_free(&public_key_out);
-        s2n_x509_validator_wipe(&validator);
-    };
+            struct s2n_pkey public_key_out;
+            EXPECT_SUCCESS(s2n_pkey_zero_init(&public_key_out));
+            s2n_pkey_type pkey_type = S2N_PKEY_TYPE_UNKNOWN;
+            EXPECT_OK(s2n_x509_validator_validate_cert_chain(&validator, connection, chain_data, chain_len, &pkey_type, &public_key_out));
+            EXPECT_EQUAL(S2N_PKEY_TYPE_RSA, pkey_type);
+            s2n_connection_free(connection);
+            s2n_pkey_free(&public_key_out);
+            s2n_x509_validator_wipe(&validator);
+        };
+    }
 
     /* test validator in unsafe mode, make sure max depth is honored on the read, but not an error condition */
     {
