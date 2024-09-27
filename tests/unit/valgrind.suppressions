@@ -15,37 +15,6 @@
    fun:main
 }
 
-# https://man7.org/linux/man-pages/man3/backtrace_symbols_fd.3.html
-#  backtrace() and backtrace_symbols_fd() don't call malloc()
-#  explicitly, but they are part of libgcc, which gets loaded
-#  dynamically when first used.  Dynamic loading usually triggers
-#  a call to [malloc(3)](https://man7.org/linux/man-pages/man3/malloc.3.html).
-{
-   stacktrace_suppression
-   Memcheck:Leak
-   match-leak-kinds: possible
-   fun:malloc
-   fun:malloc
-   fun:_dlfo_mappings_segment_allocate
-   fun:_dl_find_object_update_1
-   fun:_dl_find_object_update
-   fun:dl_open_worker_begin
-   fun:_dl_catch_exception
-   fun:dl_open_worker
-   fun:_dl_catch_exception
-   fun:_dl_open
-   fun:do_dlopen
-   fun:_dl_catch_exception
-   fun:_dl_catch_error
-   fun:dlerror_run
-   fun:__libc_dlopen_mode
-   fun:__libc_unwind_link_get
-   ...
-   fun:backtrace
-   ...
-   fun:main
-}
-
 # TODO: fix the pedantic leak errors from s2n_fork_generation_number_test
 {
    ignore_s2n_fork_generation_number_test
