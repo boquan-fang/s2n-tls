@@ -70,6 +70,7 @@ $(VALGRIND_TESTS)::
 		--num-callers=40 \
 		--undef-value-errors=no \
 		--log-fd=2 \
+		--track-fds=yes \
 		--suppressions=valgrind.suppressions \
 	./$(@:.valgrind=)
 
