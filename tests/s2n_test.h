@@ -76,7 +76,10 @@ bool s2n_use_color_in_output = true;
 #define END_TEST_NO_INIT()                                          \
     do {                                                            \
         EXPECT_SUCCESS_WITHOUT_COUNT(s2n_in_unit_test_set(false));  \
-        END_TEST_PRINT()                                            \
+        fclose(stdin);                                              \
+        fclose(stdout);                                             \
+        fclose(stderr);                                             \
+        END_TEST_PRINT();                                           \
         return 0;                                                   \
     } while(0)
 

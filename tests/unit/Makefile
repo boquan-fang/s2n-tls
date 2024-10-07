@@ -70,6 +70,7 @@ $(VALGRIND_TESTS)::
 		--num-callers=40 \
 		--undef-value-errors=no \
 		--log-fd=2 \
+		--track-fds=yes \
 		--suppressions=valgrind.suppressions \
 	./$(@:.valgrind=)
 
@@ -89,6 +90,7 @@ $(PEDANTIC_VALGRIND_TESTS)::
 		--undef-value-errors=no \
 		--show-leak-kinds=all \
 		--errors-for-leak-kinds=all \
+		--track-fds=yes \
 		--suppressions=valgrind.suppressions \
 	./$(@:.pedantic_valgrind=)
 
