@@ -180,15 +180,12 @@ int s2n_connections_set_io_pair(struct s2n_connection *client, struct s2n_connec
 
 int s2n_io_pair_close(struct s2n_test_io_pair *io_pair)
 {
-    int client_result = s2n_io_pair_close_one_end(io_pair, S2N_CLIENT);
-    int client_s2n_errno = s2n_errno;
-    int client_errno = errno;
-
-    POSIX_GUARD(s2n_io_pair_close_one_end(io_pair, S2N_SERVER));
-
-    s2n_errno = client_s2n_errno;
-    errno = client_errno;
-    POSIX_GUARD(client_result);
+    if (io_pair->client != -1) {
+        POSIX_GUARD(s2n_io_pair_close_one_end(io_pair, S2N_CLIENT));
+    }
+    if (io_pair->server != -1) {
+        POSIX_GUARD(s2n_io_pair_close_one_end(io_pair, S2N_SERVER));
+    }
     return 0;
 }
 
@@ -196,8 +193,10 @@ int s2n_io_pair_close_one_end(struct s2n_test_io_pair *io_pair, int mode_to_clos
 {
     if (mode_to_close == S2N_CLIENT) {
         POSIX_GUARD(close(io_pair->client));
+        io_pair->client = -1;
     } else if (mode_to_close == S2N_SERVER) {
         POSIX_GUARD(close(io_pair->server));
+        io_pair->server = -1;
     }
     return 0;
 }
