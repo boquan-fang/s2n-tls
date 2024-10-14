@@ -28,6 +28,8 @@
 #include "utils/s2n_safety.h"
 #include "utils/s2n_timer.h"
 
+int s2n_enable_atexit(void);
+
 /* Test vectors are taken from https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/drbg/drbgtestvectors.zip
  * - drbgvectors_pr_true/CTR_DRBG.txt :
  * [AES-128 no df]
@@ -276,7 +278,7 @@ int nist_fake_256_entropy_data(void *data, uint32_t size)
     return 0;
 }
 
-int check_drgb_version(s2n_drbg_mode mode, int (*generator)(void *, uint32_t), int personalization_size,
+int check_drgb_version(s2n_drbg_mode mode, int personalization_size,
         const char personalization_hex[], const char reference_values_hex[], const char returned_bits_hex[])
 {
     DEFER_CLEANUP(struct s2n_stuffer personalization = { 0 }, s2n_stuffer_free);
@@ -294,9 +296,6 @@ int check_drgb_version(s2n_drbg_mode mode, int (*generator)(void *, uint32_t), i
 
         /* Read the next personalization string */
         POSIX_GUARD(s2n_stuffer_read(&personalization, &personalization_string));
-
-        /* Over-ride the entropy sources */
-        POSIX_GUARD(s2n_rand_set_callbacks(nist_fake_entropy_init_cleanup, nist_fake_entropy_init_cleanup, generator, generator));
 
         /* Instantiate the DRBG */
         POSIX_GUARD_RESULT(s2n_drbg_instantiate(&nist_drbg, &personalization_string, mode));
@@ -339,7 +338,11 @@ int check_drgb_version(s2n_drbg_mode mode, int (*generator)(void *, uint32_t), i
 
 int main(int argc, char **argv)
 {
-    BEGIN_TEST();
+
+    // BEGIN_TEST();
+    BEGIN_TEST_NO_INIT();
+    EXPECT_SUCCESS(s2n_disable_atexit());
+    EXPECT_SUCCESS(s2n_init());
     EXPECT_SUCCESS(s2n_disable_tls13_in_test());
 
     uint8_t data[256] = { 0 };
@@ -427,9 +430,14 @@ int main(int argc, char **argv)
     EXPECT_OK(s2n_drbg_wipe(&aes128_drbg));
     EXPECT_OK(s2n_drbg_wipe(&aes256_pr_drbg));
 
+    EXPECT_SUCCESS(s2n_cleanup());
+    /* Over-ride the entropy sources */
+    POSIX_GUARD(s2n_rand_set_callbacks(nist_fake_entropy_init_cleanup, nist_fake_entropy_init_cleanup, &nist_fake_128_entropy_data, &nist_fake_128_entropy_data));
+    EXPECT_SUCCESS(s2n_init());
+
     /* Check everything against the NIST AES 128 vectors with prediction resistance */
     EXPECT_OK(s2n_stuffer_alloc_from_hex(&nist_aes128_reference_entropy, nist_aes128_reference_entropy_hex));
-    EXPECT_SUCCESS(check_drgb_version(S2N_AES_128_CTR_NO_DF_PR, &nist_fake_128_entropy_data, 32, nist_aes128_reference_personalization_strings_hex,
+    EXPECT_SUCCESS(check_drgb_version(S2N_AES_128_CTR_NO_DF_PR, 32, nist_aes128_reference_personalization_strings_hex,
             nist_aes128_reference_values_hex, nist_aes128_reference_returned_bits_hex));
 
     /* Check everything against the NIST AES 256 vectors with prediction resistance */
@@ -444,15 +452,18 @@ int main(int argc, char **argv)
     EXPECT_SUCCESS(s2n_stuffer_copy(&temp1, &nist_aes256_reference_entropy, temp1.write_cursor));
     EXPECT_SUCCESS(s2n_stuffer_copy(&temp2, &nist_aes256_reference_entropy, temp2.write_cursor));
 
-    EXPECT_SUCCESS(check_drgb_version(S2N_AES_256_CTR_NO_DF_PR, &nist_fake_256_entropy_data, 48, nist_aes256_reference_personalization_strings_hex,
+    EXPECT_SUCCESS(s2n_cleanup());
+    /* Over-ride the entropy sources */
+    POSIX_GUARD(s2n_rand_set_callbacks(nist_fake_entropy_init_cleanup, nist_fake_entropy_init_cleanup, &nist_fake_256_entropy_data, &nist_fake_256_entropy_data));
+    EXPECT_SUCCESS(s2n_init());
+
+    EXPECT_SUCCESS(check_drgb_version(S2N_AES_256_CTR_NO_DF_PR, 48, nist_aes256_reference_personalization_strings_hex,
             nist_aes256_reference_values_hex, nist_aes256_reference_returned_bits_hex));
 
     EXPECT_SUCCESS(s2n_stuffer_free(&nist_aes128_reference_entropy));
     EXPECT_SUCCESS(s2n_stuffer_free(&nist_aes256_reference_entropy));
 
     EXPECT_SUCCESS(s2n_config_free(config));
-    /* Clean up with previously set functions */
-    POSIX_GUARD_RESULT(s2n_rand_cleanup());
 
     END_TEST();
 }
