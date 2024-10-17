@@ -171,6 +171,7 @@ int main(int argc, char **argv)
              * to be able to test ktls.
              */
             EXPECT_FALSE(ktls_expected);
+            EXPECT_SUCCESS(s2n_io_pair_close(&io_pair));
             END_TEST();
         }
         EXPECT_OK(s2n_setup_connections(server, client, &io_pair));
@@ -697,6 +698,7 @@ int main(int argc, char **argv)
             }
         }
     }
+    close(file);
 
     END_TEST();
 }
