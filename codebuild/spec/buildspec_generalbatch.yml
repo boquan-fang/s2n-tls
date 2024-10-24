@@ -78,11 +78,11 @@ batch:
     - buildspec: codebuild/spec/buildspec_ubuntu.yml
       env:
         compute-type: BUILD_GENERAL1_LARGE
-        image: 024603541914.dkr.ecr.us-west-2.amazonaws.com/docker:ubuntu18codebuild
+        image: 024603541914.dkr.ecr.us-west-2.amazonaws.com/docker:ubuntu24
         privileged-mode: true
         variables:
           BUILD_S2N: true
-          GCC_VERSION: 9
+          GCC_VERSION: 13
           S2N_LIBCRYPTO: openssl-1.1.1
           TESTS: valgrind
       identifier: s2nValgrindOpenSSL111Gcc9
