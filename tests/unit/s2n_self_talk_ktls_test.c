@@ -90,11 +90,11 @@ static S2N_RESULT s2n_new_inet_socket_pair(struct s2n_test_io_pair *io_pair, str
     if (pid == 0) {
         RESULT_ENSURE_EQ(connect(io_pair->client, (struct sockaddr *) &saddr, addrlen), 0);
         ZERO_TO_DISABLE_DEFER_CLEANUP(io_pair);
-        POSXI_GUARD(s2n_connection_ptr_free(client));
-        POSXI_GUARD(s2n_connection_ptr_free(server));
-        POSXI_GUARD(s2n_config_ptr_free(config));
-        POSXI_GUARD(s2n_cert_chain_and_key_ptr_free(chain_and_key));
-        POSXI_GUARD(s2n_test_iovecs_free(test_iovecs));
+        RESULT_PRECONDITION(s2n_connection_ptr_free(client));
+        RESULT_PRECONDITION(s2n_connection_ptr_free(server));
+        RESULT_PRECONDITION(s2n_config_ptr_free(config));
+        RESULT_PRECONDITION(s2n_cert_chain_and_key_ptr_free(chain_and_key));
+        RESULT_PRECONDITION(s2n_test_iovecs_free(test_iovecs));
         exit(0);
     }
     io_pair->server = accept(listener, NULL, NULL);
