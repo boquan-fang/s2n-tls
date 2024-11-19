@@ -260,7 +260,7 @@ int main(int argc, char **argv)
             uint32_t expected_max_early_data_size = 1000;
             const struct s2n_cipher_suite *expected_cipher_suite = &s2n_tls13_aes_128_gcm_sha256;
 
-            DEFER_CLEANUP(struct s2n_psk *psk = s2n_external_psk_new(), s2n_psk_free);
+            struct s2n_psk *psk = s2n_external_psk_new();
             EXPECT_SUCCESS(s2n_psk_configure_early_data(psk, expected_max_early_data_size,
                     expected_cipher_suite->iana_value[0], expected_cipher_suite->iana_value[1]));
 
