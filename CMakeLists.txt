@@ -561,7 +561,7 @@ if (BUILD_TESTING)
         get_filename_component(test_case_name ${test_case} NAME_WE)
 
         add_executable(${test_case_name} ${test_case})
-        target_link_libraries(${test_case_name} PRIVATE testss2n)
+        target_link_libraries(${test_case_name} PRIVATE testss2n curl)
         if (S2N_INTERN_LIBCRYPTO)
             # if libcrypto was interned, rewrite libcrypto symbols so use of internal functions will link correctly
             add_custom_command(
