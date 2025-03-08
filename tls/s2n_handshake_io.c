@@ -1626,6 +1626,10 @@ int s2n_negotiate_impl(struct s2n_connection *conn, s2n_blocked_status *blocked)
             const int write_result = s2n_handshake_write_io(conn);
 
             if (write_result < S2N_SUCCESS) {
+                printf("Write failed\n");
+                const char *error_msg = s2n_strerror(s2n_errno, "EN");
+                fprintf(stderr, "Error: %s\n", error_msg);
+                return S2N_FAILURE;
                 if (!S2N_ERROR_IS_BLOCKING(s2n_errno)) {
                     /* Non-retryable write error. The peer might have sent an alert. Try and read it. */
                     const int write_errno = errno;

@@ -59,7 +59,6 @@ static const s2n_extension_type *const client_hello_extensions[] = {
      * because we need to choose the keyshare based on the
      * mutually supported groups. */
     &s2n_client_supported_groups_extension,
-    &s2n_client_key_share_extension,
 
     &s2n_client_signature_algorithms_extension,
     &s2n_client_server_name_extension,
@@ -67,6 +66,7 @@ static const s2n_extension_type *const client_hello_extensions[] = {
     /* We MUST process the NPN extension after the ALPN extension
      * because NPN is only negotiated if ALPN is not */
     &s2n_client_alpn_extension,
+    &s2n_client_key_share_extension,
     &s2n_client_npn_extension,
 
     &s2n_client_cert_status_request_extension,

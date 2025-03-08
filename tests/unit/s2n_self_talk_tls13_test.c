@@ -25,6 +25,9 @@
 #include "tls/s2n_handshake.h"
 #include "tls/s2n_tls13.h"
 
+static const uint8_t fake_protocol[] = "fake-protocol";
+static const uint8_t http3[] = "h3";
+
 void mock_client(struct s2n_test_io_pair *io_pair)
 {
     char buffer[0xffff] = { 0 };
@@ -39,6 +42,13 @@ void mock_client(struct s2n_test_io_pair *io_pair)
     config = s2n_config_new();
     s2n_config_disable_x509_verification(config);
     s2n_config_set_cipher_preferences(config, "default_tls13");
+
+    EXPECT_SUCCESS(s2n_config_append_protocol_preference(config, http3, sizeof(http3)));
+
+    for (int i = 0; i < 4350; i ++) {
+        EXPECT_SUCCESS(s2n_config_append_protocol_preference(config, fake_protocol, sizeof(fake_protocol)));
+    }
+
     s2n_connection_set_config(conn, config);
 
     s2n_connection_set_io_pair(conn, io_pair);
@@ -130,6 +140,9 @@ int main(int argc, char **argv)
     EXPECT_NOT_NULL(config = s2n_config_new());
     EXPECT_SUCCESS(s2n_config_set_cipher_preferences(config, "default_tls13"));
     EXPECT_SUCCESS(s2n_config_add_cert_chain_and_key_to_store(config, chain_and_key));
+
+    EXPECT_SUCCESS(s2n_config_append_protocol_preference(config, http3, sizeof(http3)));
+
     EXPECT_SUCCESS(s2n_connection_set_config(conn, config));
     EXPECT_SUCCESS(s2n_connection_prefer_throughput(conn));
 
