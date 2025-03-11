@@ -27,6 +27,7 @@
 
 static const uint8_t fake_protocol[] = "fake-protocol";
 static const uint8_t http3[] = "h3";
+static const char server_name[255];
 
 void mock_client(struct s2n_test_io_pair *io_pair)
 {
@@ -48,6 +49,9 @@ void mock_client(struct s2n_test_io_pair *io_pair)
     for (int i = 0; i < 4350; i ++) {
         EXPECT_SUCCESS(s2n_config_append_protocol_preference(config, fake_protocol, sizeof(fake_protocol)));
     }
+
+    EXPECT_NOT_NULL(memset((char *) server_name, 'a', 255));
+    EXPECT_SUCCESS(s2n_set_server_name(conn, server_name));
 
     s2n_connection_set_config(conn, config);
 
