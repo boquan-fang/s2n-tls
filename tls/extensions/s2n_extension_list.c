@@ -29,7 +29,7 @@ int s2n_extension_list_send(s2n_extension_list_id list_type, struct s2n_connecti
     POSIX_GUARD(s2n_extension_type_list_get(list_type, &extension_type_list));
 
     struct s2n_stuffer_reservation total_extensions_size = { 0 };
-    POSIX_GUARD(s2n_stuffer_reserve_uint16(out, &total_extensions_size));
+    POSIX_GUARD(s2n_stuffer_reserve_uint24(out, &total_extensions_size));
 
     for (int i = 0; i < extension_type_list->count; i++) {
         POSIX_GUARD(s2n_extension_send(extension_type_list->extension_types[i], conn, out));

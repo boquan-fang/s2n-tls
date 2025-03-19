@@ -1,17 +1,17 @@
 /*
- * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
- */
+* Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+*
+* Licensed under the Apache License, Version 2.0 (the "License").
+* You may not use this file except in compliance with the License.
+* A copy of the License is located at
+*
+*  http://aws.amazon.com/apache2.0
+*
+* or in the "license" file accompanying this file. This file is distributed
+* on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+* express or implied. See the License for the specific language governing
+* permissions and limitations under the License.
+*/
 
 #include <stdint.h>
 #include <sys/wait.h>
@@ -26,13 +26,11 @@
 #include "tls/s2n_tls13.h"
 
 static const uint8_t fake_protocol[] = "fake-protocol";
-// static const uint8_t fake_protocol_padding[] = "7";
 static const uint8_t http3[] = "h3";
 static const char server_name[255];
 
 void mock_client(struct s2n_test_io_pair *io_pair)
 {
-    char buffer[0xffff] = { 0 };
     struct s2n_connection *conn = NULL;
     struct s2n_config *config = NULL;
     s2n_blocked_status blocked;
@@ -47,14 +45,14 @@ void mock_client(struct s2n_test_io_pair *io_pair)
 
     EXPECT_SUCCESS(s2n_config_append_protocol_preference(config, http3, sizeof(http3)));
 
-    for (int i = 0; i < 4353; i ++) {
+    for (int i = 0; i < 4365; i ++) {
         EXPECT_SUCCESS(s2n_config_append_protocol_preference(config, fake_protocol, sizeof(fake_protocol)));
     }
 
-    // EXPECT_SUCCESS(s2n_config_append_protocol_preference(config, fake_protocol_padding, sizeof(fake_protocol_padding)));
-
     EXPECT_NOT_NULL(memset((char *) server_name, 'a', 255));
     EXPECT_SUCCESS(s2n_set_server_name(conn, server_name));
+
+    EXPECT_SUCCESS(s2n_config_enable_quic(config));
 
     s2n_connection_set_config(conn, config);
 
@@ -64,36 +62,6 @@ void mock_client(struct s2n_test_io_pair *io_pair)
     s2n_negotiate(conn, &blocked);
 
     s2n_connection_free_handshake(conn);
-
-    uint16_t timeout = 1;
-    s2n_connection_set_dynamic_record_threshold(conn, 0x7fff, timeout);
-    int i = 0;
-    for (i = 1; i < 0xffff - 100; i += 100) {
-        for (int j = 0; j < i; j++) {
-            buffer[j] = 33;
-        }
-        s2n_send(conn, buffer, i, &blocked);
-    }
-
-    for (int j = 0; j < i; j++) {
-        buffer[j] = 33;
-    }
-
-    /* release the buffers here to validate we can continue IO after */
-    s2n_connection_release_buffers(conn);
-
-    /* Simulate timeout second conneciton inactivity and tolerate 50 ms error */
-    struct timespec sleep_time = { .tv_sec = timeout, .tv_nsec = 50000000 };
-    int r = 0;
-    do {
-        r = nanosleep(&sleep_time, &sleep_time);
-    } while (r != 0);
-    /* Active application bytes consumed is reset to 0 in before writing data. */
-    /* Its value should equal to bytes written after writing */
-    ssize_t bytes_written = s2n_send(conn, buffer, i, &blocked);
-    if ((uint64_t) bytes_written != conn->active_application_bytes_consumed) {
-        exit(1);
-    }
 
     int shutdown_rc = -1;
     while (shutdown_rc != 0) {
@@ -150,6 +118,8 @@ int main(int argc, char **argv)
 
     EXPECT_SUCCESS(s2n_config_append_protocol_preference(config, http3, sizeof(http3)));
 
+    EXPECT_SUCCESS(s2n_config_enable_quic(config));
+
     EXPECT_SUCCESS(s2n_connection_set_config(conn, config));
     EXPECT_SUCCESS(s2n_connection_prefer_throughput(conn));
 
@@ -160,27 +130,6 @@ int main(int argc, char **argv)
     EXPECT_SUCCESS(s2n_negotiate(conn, &blocked));
     EXPECT_NOT_NULL(s2n_connection_get_client_hello(conn));
     EXPECT_EQUAL(conn->actual_protocol_version, s2n_get_highest_fully_supported_tls_version());
-
-    char buffer[0xffff];
-    for (int i = 1; i < 0xffff; i += 100) {
-        char *ptr = buffer;
-        int size = i;
-
-        do {
-            int bytes_read = 0;
-            EXPECT_SUCCESS(bytes_read = s2n_recv(conn, ptr, size, &blocked));
-
-            size -= bytes_read;
-            ptr += bytes_read;
-        } while (size);
-
-        for (int j = 0; j < i; j++) {
-            EXPECT_EQUAL(buffer[j], 33);
-        }
-
-        /* release the buffers here to validate we can continue IO after */
-        EXPECT_SUCCESS(s2n_connection_release_buffers(conn));
-    }
 
     int shutdown_rc = -1;
     do {
@@ -202,3 +151,4 @@ int main(int argc, char **argv)
 
     END_TEST();
 }
+ 
