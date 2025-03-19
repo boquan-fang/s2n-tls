@@ -45,7 +45,7 @@ void mock_client(struct s2n_test_io_pair *io_pair)
 
     EXPECT_SUCCESS(s2n_config_append_protocol_preference(config, http3, sizeof(http3)));
 
-    for (int i = 0; i < 4365; i ++) {
+    for (int i = 0; i < 4357; i ++) {
         EXPECT_SUCCESS(s2n_config_append_protocol_preference(config, fake_protocol, sizeof(fake_protocol)));
     }
 
@@ -151,4 +151,3 @@ int main(int argc, char **argv)
 
     END_TEST();
 }
- 
