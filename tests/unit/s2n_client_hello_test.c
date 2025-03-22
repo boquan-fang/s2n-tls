@@ -44,9 +44,25 @@
 #define COMPRESSION_METHODS     0x00, 0x01, 0x02, 0x03, 0x04
 #define COMPRESSION_METHODS_LEN 0x05
 
+#define MESSAGE_SIZE_LOCATION 1
+
 int s2n_parse_client_hello(struct s2n_connection *conn);
 S2N_RESULT s2n_client_hello_get_raw_extension(uint16_t extension_iana,
         struct s2n_blob *raw_extensions, struct s2n_blob *extension);
+
+S2N_RESULT s2n_rewrite_client_hello_length(struct s2n_stuffer *client_hello_stuffer, uint32_t length)
+{
+    /* Extend the stuffer to the desitred length */
+    RESULT_GUARD_POSIX(s2n_stuffer_skip_write(client_hello_stuffer, length - client_hello_stuffer->write_cursor));
+
+    /* Rewrite the message length in header */
+    uint32_t previous_write_cursor = client_hello_stuffer->write_cursor;
+    client_hello_stuffer->write_cursor = MESSAGE_SIZE_LOCATION;
+    RESULT_GUARD_POSIX(s2n_stuffer_write_uint24(client_hello_stuffer, length));
+    client_hello_stuffer->write_cursor = previous_write_cursor;
+
+    return S2N_RESULT_OK;
+}
 
 int main(int argc, char **argv)
 {
@@ -1952,6 +1968,80 @@ int main(int argc, char **argv)
             EXPECT_FAILURE_WITH_ERRNO(s2n_client_hello_get_server_name(client_hello, small_buf, sizeof(small_buf), &out_length), S2N_ERR_SAFETY);
         };
     };
+
+    EXPECT_SUCCESS(s2n_enable_tls13_in_test());
+
+    /* Test: The client hello is slightly less than 64KB */
+    {
+        DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
+        EXPECT_NOT_NULL(client_config);
+
+        DEFER_CLEANUP(struct s2n_config *server_config = s2n_config_new(), s2n_config_ptr_free);
+        EXPECT_NOT_NULL(server_config);
+
+        EXPECT_SUCCESS(s2n_config_add_cert_chain_and_key_to_store(server_config, chain_and_key));
+
+        EXPECT_SUCCESS(s2n_config_set_cipher_preferences(client_config, "default_tls13"));
+        EXPECT_SUCCESS(s2n_config_set_cipher_preferences(server_config, "default_tls13"));
+
+        EXPECT_SUCCESS(s2n_config_disable_x509_verification(client_config));
+
+        DEFER_CLEANUP(struct s2n_connection *client = s2n_connection_new(S2N_CLIENT),
+            s2n_connection_ptr_free);
+        EXPECT_NOT_NULL(client);
+        EXPECT_SUCCESS(s2n_connection_set_config(client, client_config));
+
+        DEFER_CLEANUP(struct s2n_connection *server = s2n_connection_new(S2N_SERVER),
+            s2n_connection_ptr_free);
+        EXPECT_NOT_NULL(server);
+        EXPECT_SUCCESS(s2n_connection_set_config(server, server_config));
+
+        DEFER_CLEANUP(struct s2n_test_io_stuffer_pair io_pair = { 0 }, s2n_io_stuffer_pair_free);
+        EXPECT_OK(s2n_io_stuffer_pair_init(&io_pair));
+        EXPECT_OK(s2n_connections_set_io_stuffer_pair(client, server, &io_pair));
+
+        s2n_blocked_status blocked = S2N_NOT_BLOCKED;
+
+        s2n_negotiate(client, &blocked);
+        EXPECT_OK(s2n_rewrite_client_hello_length(&io_pair.server_in, S2N_MAXIMUM_HANDSHAKE_MESSAGE_LENGTH - 2));
+        EXPECT_OK(s2n_negotiate_test_server_and_client_until_message(server, client, SERVER_HELLO));
+    }
+
+    /* Test: The client hello is larger than 64KB */
+    {
+        DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
+        EXPECT_NOT_NULL(client_config);
+
+        DEFER_CLEANUP(struct s2n_config *server_config = s2n_config_new(), s2n_config_ptr_free);
+        EXPECT_NOT_NULL(server_config);
+
+        EXPECT_SUCCESS(s2n_config_add_cert_chain_and_key_to_store(server_config, chain_and_key));
+
+        EXPECT_SUCCESS(s2n_config_set_cipher_preferences(client_config, "default"));
+        EXPECT_SUCCESS(s2n_config_set_cipher_preferences(server_config, "default"));
+
+        EXPECT_SUCCESS(s2n_config_disable_x509_verification(client_config));
+
+        DEFER_CLEANUP(struct s2n_connection *client = s2n_connection_new(S2N_CLIENT),
+            s2n_connection_ptr_free);
+        EXPECT_NOT_NULL(client);
+        EXPECT_SUCCESS(s2n_connection_set_config(client, client_config));
+
+        DEFER_CLEANUP(struct s2n_connection *server = s2n_connection_new(S2N_SERVER),
+            s2n_connection_ptr_free);
+        EXPECT_NOT_NULL(server);
+        EXPECT_SUCCESS(s2n_connection_set_config(server, server_config));
+
+        DEFER_CLEANUP(struct s2n_test_io_stuffer_pair io_pair = { 0 }, s2n_io_stuffer_pair_free);
+        EXPECT_OK(s2n_io_stuffer_pair_init(&io_pair));
+        EXPECT_OK(s2n_connections_set_io_stuffer_pair(client, server, &io_pair));
+
+        s2n_blocked_status blocked = S2N_NOT_BLOCKED;
+
+        s2n_negotiate(client, &blocked);
+        EXPECT_OK(s2n_rewrite_client_hello_length(&io_pair.server_in, S2N_MAXIMUM_HANDSHAKE_MESSAGE_LENGTH + 1));
+        EXPECT_ERROR_WITH_ERRNO(s2n_negotiate_test_server_and_client_until_message(server, client, SERVER_HELLO), S2N_ERR_BAD_MESSAGE);
+    }
 
     EXPECT_SUCCESS(s2n_cert_chain_and_key_free(chain_and_key));
     EXPECT_SUCCESS(s2n_cert_chain_and_key_free(ecdsa_chain_and_key));
