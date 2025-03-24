@@ -44,17 +44,10 @@
 #define COMPRESSION_METHODS     0x00, 0x01, 0x02, 0x03, 0x04
 #define COMPRESSION_METHODS_LEN 0x05
 
-/**
- * Handshake message size varies with libcryptos.
- * openssl-1.0.2 have 94 bytes for ClientHello with default_tls13 policy without alpn.
- * Other libcryptos have 234 bytes for ClientHello with default_tls13 policy without alpn.
- */
-#define ESTIMATED_SIZE_EXCEPT_ALPN_TO_SUCCESS 250
-/* Failure case: */
-#define ESTIMATED_SIZE_EXCEPT_ALPN_TO_FAIL 200
-/* We add a one byte length prefix when we append a alpn */
-#define NUM_OF_ALPN_TO_SUCCESS ((S2N_MAXIMUM_HANDSHAKE_MESSAGE_LENGTH - ESTIMATED_SIZE_EXCEPT_ALPN_TO_SUCCESS) / 2)
-#define NUM_OF_ALPN_TO_FAILURE ((S2N_MAXIMUM_HANDSHAKE_MESSAGE_LENGTH - ESTIMATED_SIZE_EXCEPT_ALPN_TO_FAIL) / 2)
+#define CIPHER_SUITES_MAX_LENGTH (UINT16_MAX - 2)
+#define MAXIMUM_NUM_OF_CIPHER_SUITES (CIPHER_SUITES_MAX_LENGTH / S2N_TLS_CIPHER_SUITE_LEN)
+/* Drop 500 cipher suites from max, so that the total handshake message length won't exceed 64KB */
+#define REDUCED_CIPHER_SUITE_COUNT (MAXIMUM_NUM_OF_CIPHER_SUITES - 500)
 
 int s2n_parse_client_hello(struct s2n_connection *conn);
 S2N_RESULT s2n_client_hello_get_raw_extension(uint16_t extension_iana,
@@ -1967,8 +1960,6 @@ int main(int argc, char **argv)
 
     /* Test: The client hello is slightly less than 64KB */
     {
-        EXPECT_SUCCESS(s2n_enable_tls13_in_test());
-
         DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
         EXPECT_NOT_NULL(client_config);
 
@@ -1977,29 +1968,43 @@ int main(int argc, char **argv)
 
         EXPECT_SUCCESS(s2n_config_add_cert_chain_and_key_to_store(server_config, chain_and_key));
 
-        EXPECT_SUCCESS(s2n_config_set_cipher_preferences(client_config, "default_tls13"));
-        EXPECT_SUCCESS(s2n_config_set_cipher_preferences(server_config, "default_tls13"));
+        struct s2n_cipher_suite *test_cipher_suites[REDUCED_CIPHER_SUITE_COUNT] = { 0 };
+
+        for (int i = 0; i < REDUCED_CIPHER_SUITE_COUNT; i ++) {
+            test_cipher_suites[i] = &s2n_rsa_with_aes_128_gcm_sha256;
+        }
+
+        const struct s2n_cipher_preferences test_cipher_suites_preferences = {
+            .count = s2n_array_len(test_cipher_suites),
+            .suites = test_cipher_suites,
+        };
+
+        struct s2n_security_policy test_security_policy = {
+            .minimum_protocol_version = S2N_TLS12,
+            .cipher_preferences = &test_cipher_suites_preferences,
+            .kem_preferences = &kem_preferences_null,
+            .signature_preferences = &s2n_signature_preferences_20240501,
+            .ecc_preferences = &s2n_ecc_preferences_20240501,
+            .rules = {
+                    [S2N_PERFECT_FORWARD_SECRECY] = true,
+            },
+        };
 
         EXPECT_SUCCESS(s2n_config_disable_x509_verification(client_config));
-
-        /* Set the alpn to one byte so that we can control the alpn extension size */
-        uint8_t application_protocol[1] = { 0 };
-
-        for (int i = 0; i < NUM_OF_ALPN_TO_SUCCESS; i++) {
-            EXPECT_SUCCESS(s2n_config_append_protocol_preference(client_config, application_protocol, sizeof(application_protocol)));
-        }
 
         DEFER_CLEANUP(struct s2n_connection *client = s2n_connection_new(S2N_CLIENT),
             s2n_connection_ptr_free);
         EXPECT_NOT_NULL(client);
         EXPECT_SUCCESS(s2n_connection_set_config(client, client_config));
         EXPECT_SUCCESS(s2n_connection_set_blinding(client, S2N_SELF_SERVICE_BLINDING));
+        client->security_policy_override = &test_security_policy;
 
         DEFER_CLEANUP(struct s2n_connection *server = s2n_connection_new(S2N_SERVER),
             s2n_connection_ptr_free);
         EXPECT_NOT_NULL(server);
         EXPECT_SUCCESS(s2n_connection_set_config(server, server_config));
         EXPECT_SUCCESS(s2n_connection_set_blinding(server, S2N_SELF_SERVICE_BLINDING));
+        server->security_policy_override = &test_security_policy;
 
         DEFER_CLEANUP(struct s2n_test_io_stuffer_pair io_pair = { 0 }, s2n_io_stuffer_pair_free);
         EXPECT_OK(s2n_io_stuffer_pair_init(&io_pair));
@@ -2008,10 +2013,8 @@ int main(int argc, char **argv)
         EXPECT_OK(s2n_negotiate_test_server_and_client_until_message(server, client, SERVER_HELLO));
     }
 
-    // /* Test: The client hello is larger than 64KB */
+    /* Test: The client hello is larger than 64KB */
     {
-        EXPECT_SUCCESS(s2n_enable_tls13_in_test());
-
         DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
         EXPECT_NOT_NULL(client_config);
 
@@ -2020,29 +2023,44 @@ int main(int argc, char **argv)
 
         EXPECT_SUCCESS(s2n_config_add_cert_chain_and_key_to_store(server_config, chain_and_key));
 
-        EXPECT_SUCCESS(s2n_config_set_cipher_preferences(client_config, "default_tls13"));
-        EXPECT_SUCCESS(s2n_config_set_cipher_preferences(server_config, "default_tls13"));
+        struct s2n_cipher_suite *test_cipher_suites[MAXIMUM_NUM_OF_CIPHER_SUITES] = { 0 };
+
+        for (int i = 0; i < MAXIMUM_NUM_OF_CIPHER_SUITES; i ++) {
+            test_cipher_suites[i] = &s2n_rsa_with_aes_128_gcm_sha256;
+        }
+
+        /* We append the maximun number of cipher suites, so that the Client Hello size grows beyond 64KB */
+        const struct s2n_cipher_preferences test_cipher_suites_preferences = {
+            .count = s2n_array_len(test_cipher_suites),
+            .suites = test_cipher_suites,
+        };
+
+        struct s2n_security_policy test_security_policy = {
+            .minimum_protocol_version = S2N_TLS12,
+            .cipher_preferences = &test_cipher_suites_preferences,
+            .kem_preferences = &kem_preferences_null,
+            .signature_preferences = &s2n_signature_preferences_20240501,
+            .ecc_preferences = &s2n_ecc_preferences_20240501,
+            .rules = {
+                    [S2N_PERFECT_FORWARD_SECRECY] = true,
+            },
+        };
 
         EXPECT_SUCCESS(s2n_config_disable_x509_verification(client_config));
-
-        /* Set the alpn to one byte so that we can control the alpn extension size */
-        uint8_t application_protocol[1] = { 0 };
-
-        for (int i = 0; i < NUM_OF_ALPN_TO_FAILURE; i++) {
-            EXPECT_SUCCESS(s2n_config_append_protocol_preference(client_config, application_protocol, sizeof(application_protocol)));
-        }
 
         DEFER_CLEANUP(struct s2n_connection *client = s2n_connection_new(S2N_CLIENT),
             s2n_connection_ptr_free);
         EXPECT_NOT_NULL(client);
         EXPECT_SUCCESS(s2n_connection_set_config(client, client_config));
         EXPECT_SUCCESS(s2n_connection_set_blinding(client, S2N_SELF_SERVICE_BLINDING));
+        client->security_policy_override = &test_security_policy;
 
         DEFER_CLEANUP(struct s2n_connection *server = s2n_connection_new(S2N_SERVER),
             s2n_connection_ptr_free);
         EXPECT_NOT_NULL(server);
         EXPECT_SUCCESS(s2n_connection_set_config(server, server_config));
         EXPECT_SUCCESS(s2n_connection_set_blinding(server, S2N_SELF_SERVICE_BLINDING));
+        server->security_policy_override = &test_security_policy;
 
         DEFER_CLEANUP(struct s2n_test_io_stuffer_pair io_pair = { 0 }, s2n_io_stuffer_pair_free);
         EXPECT_OK(s2n_io_stuffer_pair_init(&io_pair));
