@@ -46,8 +46,11 @@
 
 #define CIPHER_SUITES_MAX_LENGTH (UINT16_MAX - 2)
 #define MAXIMUM_NUM_OF_CIPHER_SUITES (CIPHER_SUITES_MAX_LENGTH / S2N_TLS_CIPHER_SUITE_LEN)
-/* Drop 500 cipher suites from max, so that the total handshake message length won't exceed 64KB */
-#define REDUCED_CIPHER_SUITE_COUNT (MAXIMUM_NUM_OF_CIPHER_SUITES - 500)
+#define NUM_OF_CIPHER_SUITES_TO_DROP 150
+/* Drop 150 cipher suites from max, so that the total handshake message length won't exceed 64KB */
+#define REDUCED_CIPHER_SUITE_COUNT (MAXIMUM_NUM_OF_CIPHER_SUITES - NUM_OF_CIPHER_SUITES_TO_DROP)
+/* Reducing cipher suites by 150 creates approximately 300 bytes margin below maximum handshake length */
+#define ESTMATIED_MAX_HANDSHAKE_LENGTH_MARGIN (NUM_OF_CIPHER_SUITES_TO_DROP * S2N_TLS_CIPHER_SUITE_LEN)
 
 int s2n_parse_client_hello(struct s2n_connection *conn);
 S2N_RESULT s2n_client_hello_get_raw_extension(uint16_t extension_iana,
@@ -1958,7 +1961,7 @@ int main(int argc, char **argv)
         };
     };
 
-    /* Test: The client hello is slightly less than 64KB */
+    /* Test: client hello is slightly less than 64KB */
     {
         DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
         EXPECT_NOT_NULL(client_config);
@@ -2011,9 +2014,18 @@ int main(int argc, char **argv)
         EXPECT_OK(s2n_connections_set_io_stuffer_pair(client, server, &io_pair));
 
         EXPECT_OK(s2n_negotiate_test_server_and_client_until_message(server, client, SERVER_HELLO));
+
+        /* handshake.io shouldn't be tainted after sending and receiving large client hello */
+        EXPECT_TRUE(client->handshake.io.tainted == 0);
+        EXPECT_TRUE(server->handshake.io.tainted == 0);
+
+        struct s2n_client_hello *client_hello = s2n_connection_get_client_hello(server);
+        EXPECT_NOT_NULL(client_hello);
+        uint32_t handshake_max_len_margin = S2N_MAXIMUM_HANDSHAKE_MESSAGE_LENGTH - s2n_client_hello_get_raw_message_length(client_hello);
+        EXPECT_TRUE(handshake_max_len_margin < ESTMATIED_MAX_HANDSHAKE_LENGTH_MARGIN);
     }
 
-    /* Test: The client hello is larger than 64KB */
+    /* Test: client hello is larger than 64KB */
     {
         DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
         EXPECT_NOT_NULL(client_config);
@@ -2067,6 +2079,10 @@ int main(int argc, char **argv)
         EXPECT_OK(s2n_connections_set_io_stuffer_pair(client, server, &io_pair));
 
         EXPECT_ERROR_WITH_ERRNO(s2n_negotiate_test_server_and_client_until_message(server, client, SERVER_HELLO), S2N_ERR_BAD_MESSAGE);
+    
+        /* handshake.io shouldn't be tainted after sending and receiving large client hello */
+        EXPECT_TRUE(client->handshake.io.tainted == 0);
+        EXPECT_TRUE(server->handshake.io.tainted == 0);
     }
 
     EXPECT_SUCCESS(s2n_cert_chain_and_key_free(chain_and_key));
