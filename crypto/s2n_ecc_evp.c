@@ -434,7 +434,7 @@ int s2n_ecc_evp_write_params_point(struct s2n_ecc_evp_params *ecc_evp_params, st
     POSIX_GUARD(s2n_ecc_evp_calculate_point_length(point, group, &point_len));
     S2N_ERROR_IF(point_len != ecc_evp_params->negotiated_curve->share_size, S2N_ERR_ECDHE_SERIALIZING);
 
-    /* Use a shallow copy to do raw write operation, so that the out stuffer won't get tainted */
+    /* A safer way to do s2n_stuffer_raw_write without tainted the out stuffer */
     struct s2n_stuffer copy = *out;
     {
         struct s2n_blob point_blob = { 0 };

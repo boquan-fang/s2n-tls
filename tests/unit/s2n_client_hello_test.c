@@ -44,9 +44,9 @@
 #define COMPRESSION_METHODS     0x00, 0x01, 0x02, 0x03, 0x04
 #define COMPRESSION_METHODS_LEN 0x05
 
-#define CIPHER_SUITES_MAX_LENGTH (UINT16_MAX - 2)
-#define MAXIMUM_NUM_OF_CIPHER_SUITES (CIPHER_SUITES_MAX_LENGTH / S2N_TLS_CIPHER_SUITE_LEN)
+#define CIPHER_SUITES_MAX_LENGTH     (UINT16_MAX - 2)
 #define NUM_OF_CIPHER_SUITES_TO_DROP 150
+#define MAXIMUM_NUM_OF_CIPHER_SUITES (CIPHER_SUITES_MAX_LENGTH / S2N_TLS_CIPHER_SUITE_LEN)
 /* Drop 150 cipher suites from max, so that the total handshake message length won't exceed 64KB */
 #define REDUCED_CIPHER_SUITE_COUNT (MAXIMUM_NUM_OF_CIPHER_SUITES - NUM_OF_CIPHER_SUITES_TO_DROP)
 /* Reducing cipher suites by 150 creates approximately 300 bytes margin below maximum handshake length */
@@ -1961,7 +1961,7 @@ int main(int argc, char **argv)
         };
     };
 
-    /* Test: client hello is slightly less than 64KB */
+    /* Test: Client Hello is slightly less than 64KB */
     {
         DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
         EXPECT_NOT_NULL(client_config);
@@ -1973,7 +1973,7 @@ int main(int argc, char **argv)
 
         struct s2n_cipher_suite *test_cipher_suites[REDUCED_CIPHER_SUITE_COUNT] = { 0 };
 
-        for (int i = 0; i < REDUCED_CIPHER_SUITE_COUNT; i ++) {
+        for (int i = 0; i < REDUCED_CIPHER_SUITE_COUNT; i++) {
             test_cipher_suites[i] = &s2n_rsa_with_aes_128_gcm_sha256;
         }
 
@@ -1996,14 +1996,14 @@ int main(int argc, char **argv)
         EXPECT_SUCCESS(s2n_config_disable_x509_verification(client_config));
 
         DEFER_CLEANUP(struct s2n_connection *client = s2n_connection_new(S2N_CLIENT),
-            s2n_connection_ptr_free);
+                s2n_connection_ptr_free);
         EXPECT_NOT_NULL(client);
         EXPECT_SUCCESS(s2n_connection_set_config(client, client_config));
         EXPECT_SUCCESS(s2n_connection_set_blinding(client, S2N_SELF_SERVICE_BLINDING));
         client->security_policy_override = &test_security_policy;
 
         DEFER_CLEANUP(struct s2n_connection *server = s2n_connection_new(S2N_SERVER),
-            s2n_connection_ptr_free);
+                s2n_connection_ptr_free);
         EXPECT_NOT_NULL(server);
         EXPECT_SUCCESS(s2n_connection_set_config(server, server_config));
         EXPECT_SUCCESS(s2n_connection_set_blinding(server, S2N_SELF_SERVICE_BLINDING));
@@ -2022,10 +2022,11 @@ int main(int argc, char **argv)
         struct s2n_client_hello *client_hello = s2n_connection_get_client_hello(server);
         EXPECT_NOT_NULL(client_hello);
         uint32_t handshake_max_len_margin = S2N_MAXIMUM_HANDSHAKE_MESSAGE_LENGTH - s2n_client_hello_get_raw_message_length(client_hello);
+        /* Size of Client Hello is less than 300 bytes from the maximum handshake length */
         EXPECT_TRUE(handshake_max_len_margin < ESTMATIED_MAX_HANDSHAKE_LENGTH_MARGIN);
     }
 
-    /* Test: client hello is larger than 64KB */
+    /* Test: Client Hello is larger than 64KB */
     {
         DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
         EXPECT_NOT_NULL(client_config);
@@ -2037,7 +2038,7 @@ int main(int argc, char **argv)
 
         struct s2n_cipher_suite *test_cipher_suites[MAXIMUM_NUM_OF_CIPHER_SUITES] = { 0 };
 
-        for (int i = 0; i < MAXIMUM_NUM_OF_CIPHER_SUITES; i ++) {
+        for (int i = 0; i < MAXIMUM_NUM_OF_CIPHER_SUITES; i++) {
             test_cipher_suites[i] = &s2n_rsa_with_aes_128_gcm_sha256;
         }
 
@@ -2061,14 +2062,14 @@ int main(int argc, char **argv)
         EXPECT_SUCCESS(s2n_config_disable_x509_verification(client_config));
 
         DEFER_CLEANUP(struct s2n_connection *client = s2n_connection_new(S2N_CLIENT),
-            s2n_connection_ptr_free);
+                s2n_connection_ptr_free);
         EXPECT_NOT_NULL(client);
         EXPECT_SUCCESS(s2n_connection_set_config(client, client_config));
         EXPECT_SUCCESS(s2n_connection_set_blinding(client, S2N_SELF_SERVICE_BLINDING));
         client->security_policy_override = &test_security_policy;
 
         DEFER_CLEANUP(struct s2n_connection *server = s2n_connection_new(S2N_SERVER),
-            s2n_connection_ptr_free);
+                s2n_connection_ptr_free);
         EXPECT_NOT_NULL(server);
         EXPECT_SUCCESS(s2n_connection_set_config(server, server_config));
         EXPECT_SUCCESS(s2n_connection_set_blinding(server, S2N_SELF_SERVICE_BLINDING));
@@ -2078,8 +2079,15 @@ int main(int argc, char **argv)
         EXPECT_OK(s2n_io_stuffer_pair_init(&io_pair));
         EXPECT_OK(s2n_connections_set_io_stuffer_pair(client, server, &io_pair));
 
+        s2n_blocked_status blocked = S2N_NOT_BLOCKED;
+ 
+        /* Write Client Hello into io_pair.server_in */
+        s2n_negotiate(client, &blocked);
+
+        /* The size of Client Hello exceeds S2N_MAXIMUM_HANDSHAKE_MESSAGE_LENGTH */
+        EXPECT_TRUE(io_pair.server_in.write_cursor > S2N_MAXIMUM_HANDSHAKE_MESSAGE_LENGTH);
         EXPECT_ERROR_WITH_ERRNO(s2n_negotiate_test_server_and_client_until_message(server, client, SERVER_HELLO), S2N_ERR_BAD_MESSAGE);
-    
+
         /* handshake.io shouldn't be tainted after sending and receiving large client hello */
         EXPECT_TRUE(client->handshake.io.tainted == 0);
         EXPECT_TRUE(server->handshake.io.tainted == 0);
