@@ -261,6 +261,12 @@ static int s2n_server_hello_parse(struct s2n_connection *conn)
         POSIX_GUARD_RESULT(s2n_tls13_key_schedule_reset(conn));
     }
 
+    /**
+     * The outstanding pointer cipher_suite_wire is not accessable out of this function's scope.
+     * It is only used in s2n_set_cipher_as_client as a check. It's not written into the connection.
+     */
+    in->tainted = false;
+
     return 0;
 }
 
