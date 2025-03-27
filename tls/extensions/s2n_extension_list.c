@@ -44,6 +44,12 @@ int s2n_extension_list_recv(s2n_extension_list_id list_type, struct s2n_connecti
     s2n_parsed_extensions_list parsed_extension_list = { 0 };
     POSIX_GUARD(s2n_extension_list_parse(in, &parsed_extension_list));
     POSIX_GUARD(s2n_extension_list_process(list_type, conn, &parsed_extension_list));
+
+    /**
+     * The outstanding pointer parsed_extension_list->raw is not accessable out of this function's scope.
+     * We are not writting the raw pointer into connection.
+     */    
+    in->tainted = false;
     return S2N_SUCCESS;
 }
 
