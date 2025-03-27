@@ -434,6 +434,11 @@ int s2n_kem_send_ciphertext(struct s2n_stuffer *out, struct s2n_kem_params *kem_
     /* Saves the shared secret in kem_params */
     POSIX_GUARD_RESULT(s2n_kem_encapsulate(kem_params, &ciphertext));
 
+    /**
+     * The outstanding pointer ciphertext->data is not accessable outside of this function's scope.
+     */
+    out->tainted = false;
+
     return S2N_SUCCESS;
 }
 

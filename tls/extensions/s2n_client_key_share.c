@@ -132,6 +132,11 @@ static int s2n_generate_pq_hybrid_key_share(struct s2n_stuffer *out, struct s2n_
 
     POSIX_GUARD(s2n_stuffer_write_vector_size(&total_share_size));
 
+    /**
+     * The outstanding pointer kem_group->public_key is set to NULL after s2n_kem_send_public_key.
+     * It is also not accessable outside of this function's scope.
+     */
+    out->tainted = false;
     return S2N_SUCCESS;
 }
 
