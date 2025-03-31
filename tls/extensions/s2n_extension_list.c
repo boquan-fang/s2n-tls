@@ -44,6 +44,15 @@ int s2n_extension_list_recv(s2n_extension_list_id list_type, struct s2n_connecti
     s2n_parsed_extensions_list parsed_extension_list = { 0 };
     POSIX_GUARD(s2n_extension_list_parse(in, &parsed_extension_list));
     POSIX_GUARD(s2n_extension_list_process(list_type, conn, &parsed_extension_list));
+
+    /**
+     * TODO:: Is it correct?
+     * 
+     * Stuffer got tainted in s2n_extension_list_parse with a s2n_stuffer_raw_read.
+     * The outstanding point is stored in parsed_extension_list->raw. I am not seeing that
+     * raw pointer got written into conn in s2n_extension_list_process.
+     */
+    in->tainted = false;
     return S2N_SUCCESS;
 }
 

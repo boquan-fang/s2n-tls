@@ -434,6 +434,14 @@ int s2n_kem_send_ciphertext(struct s2n_stuffer *out, struct s2n_kem_params *kem_
     /* Saves the shared secret in kem_params */
     POSIX_GUARD_RESULT(s2n_kem_encapsulate(kem_params, &ciphertext));
 
+    /**
+     * TODO:: Is it correct?
+     * 
+     * We let EVP_PKEY_encapsulate function in kem->encapsulate to write
+     * shared secrete for key derivation into the location. That pointer is not
+     * used after this function.
+     */
+    out->tainted = false;
     return S2N_SUCCESS;
 }
 
