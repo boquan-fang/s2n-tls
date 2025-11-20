@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Security Policies</title>
+        <title>Post Quantum Support</title>
 
 
         <!-- Custom HTML head -->
@@ -174,185 +174,169 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="security-policies"><a class="header" href="#security-policies">Security Policies</a></h1>
-<p>s2n-tls uses pre-made security policies to help avoid common misconfiguration mistakes for TLS.</p>
-<p><code>s2n_config_set_cipher_preferences()</code> sets a security policy, which includes the cipher/kem/signature/ecc preferences and protocol version.</p>
-<h2 id="supported-tls-versions"><a class="header" href="#supported-tls-versions">Supported TLS Versions</a></h2>
-<p>The default security policy supports TLS13 and will negotiate it wherever possible.</p>
-<h2 id="deprecation-of-security-policies"><a class="header" href="#deprecation-of-security-policies">Deprecation of Security Policies</a></h2>
-<p>s2n-tls may deprecate security policies. If s2n-tls drops support for an algorithm included in a security policy, the behavior of the security policy might unexpectedly change. Because s2n-tls promises that versioned policies will never change, we instead deprecate affected security policies. If a security policy is deprecated, users will receive a <code>S2N_ERR_DEPRECATED_SECURITY_POLICY</code> usage error when requesting that policy.</p>
-<h3 id="ssl-30-tls-10-and-tls-11"><a class="header" href="#ssl-30-tls-10-and-tls-11">SSL 3.0, TLS 1.0, and TLS 1.1</a></h3>
-<p>s2n-tls supports older versions, but their use is not recommended.</p>
-<p>Compatibility with older versions of TLS may also require support for older ciphersuites. Although it is possible to negotiate older versions of TLS with more modern options like SHA256, AES, ECDSA, and ECDHE, older clients and servers may only support older options like SHA1, 3DES, RSA certs, and either RSA or DHE key exchange. If a security policy allows older TLS versions but does not allow older ciphersuites, handshakes with older clients and servers may fail.</p>
-<h3 id="ssl-20"><a class="header" href="#ssl-20">SSL 2.0</a></h3>
-<p>s2n-tls will not negotiate SSL 2.0, but will accept SSLv2 ClientHellos advertising a higher protocol version like TLS1.2. See the <a href="https://datatracker.ietf.org/doc/html/rfc5246#appendix-E.2">“Compatibility with SSL 2.0”</a> section in the TLS 1.2 RFC.</p>
-<p>Compatibility with SSLv2 ClientHellos advertising TLS1.2 may require similar support for older ciphersuites as compatibility with older versions of TLS does. In particular, SSLv2 ClientHellos are likely to require support for SHA1 and either RSA or DHE key exchange. This is due to technical limitations of the SSLv2 ClientHello, which does not include TLS extensions.</p>
-<h3 id="chart-security-policy-version-to-protocol-version-and-ciphersuites"><a class="header" href="#chart-security-policy-version-to-protocol-version-and-ciphersuites">Chart: Security Policy Version To Protocol Version And Ciphersuites</a></h3>
-<p>The following chart maps the security policy version to protocol version and ciphersuites supported.</p>
+                        <h1 id="post-quantum-pq-support"><a class="header" href="#post-quantum-pq-support">Post Quantum (PQ) Support</a></h1>
+<p>s2n-tls supports both post-quantum key exchange and post-quantum authentication for TLS1.3.</p>
+<h2 id="key-exchange-ml-kem--kyber"><a class="header" href="#key-exchange-ml-kem--kyber">Key Exchange: ML-KEM / Kyber</a></h2>
+<p>Currently, only <a href="https://csrc.nist.gov/pubs/fips/203">ML-KEM</a> / <a href="https://pq-crystals.org/kyber/">Kyber</a> are supported for post-quantum key exchange. “ML-KEM” is the name given to the NIST standardized version of Kyber.</p>
+<p>Specifically, s2n-tls supports hybrid key exchange. PQ hybrid key exchange involves performing both classic ECDH key exchange and post-quantum key exchange, then combining the two resultant secrets. This strategy combines the high assurance of the classical key exchange algorithms with the quantum-resistance of the new post-quantum key exchange algorithms. If one of the two algorithms is compromised, either because advances in quantum computing make the classic algorithms insecure or because cryptographers find a flaw in the relatively new post-quantum algorithms, the secret is still secure. Hybrid post-quantum key exchange is more secure than standard key exchange, but is slower and requires more processing and more network bandwidth.</p>
+<p>Careful: An s2n-tls server that enables post-quantum cryptography will mandate post-quantum key exchange with any client advertising post-quantum algorithms. This can result in a retry and an extra round trip if the client does not initially send a post-quantum key share. The rational behind this behavior is that post-quantum users prioritize security over the potential cost of an extra round trip.</p>
+<h2 id="authentication-ml-dsa"><a class="header" href="#authentication-ml-dsa">Authentication: ML-DSA</a></h2>
+<p>Currently, only <a href="https://csrc.nist.gov/pubs/fips/204">ML-DSA</a> is supported for post-quantum authentication.</p>
+<p>In order to use ML-DSA, you must configure s2n-tls to use an ML-DSA certificate, just as you would configure an RSA or ECDSA certificate. See <a href="./ch09-certificates.html">certificates</a>.</p>
+<h2 id="requirements"><a class="header" href="#requirements">Requirements</a></h2>
+<h3 id="aws-lc"><a class="header" href="#aws-lc">AWS-LC</a></h3>
+<p>s2n-tls must be built with aws-lc to use post-quantum algorithms. See the <a href="https://github.com/aws/s2n-tls/blob/main/docs/BUILD.md#building-with-a-specific-libcrypto">s2n-tls build documentation</a> for how to build with aws-lc. For ML-DSA, you will need to use a version of AWS-LC &gt;= v1.50.0 (API version 33).</p>
+<p>If you’re unsure what cryptography library s2n-tls is built against, trying running s2nd or s2nc:</p>
+<pre><code>&gt; s2nd localhost 8000
+libcrypto: AWS-LC
+Listening on localhost:8000
+</code></pre>
+<h3 id="security-policy"><a class="header" href="#security-policy">Security Policy</a></h3>
+<p>Post-quantum algorithms are enabled by configuring a security policy (see <a href="./ch06-security-policies.html">Security Policies</a>) that supports post-quantum algorithms.</p>
+<p>“default_pq” is the equivalent of “default_tls13”, but with PQ support. Like the other default policies, “default_pq” may change as a result of library updates. The fixed, numbered equivalent of “default_pq” is currently “20250721”. For previous defaults, see the “Default Policy History” section below.</p>
+<p>Other available PQ policies are compared in the tables below.</p>
+<h3 id="chart-security-policy-version-to-pq-hybrid-key-exchange-methods-ml-kem"><a class="header" href="#chart-security-policy-version-to-pq-hybrid-key-exchange-methods-ml-kem">Chart: Security Policy Version To PQ Hybrid Key Exchange Methods (ML-KEM)</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>version</th><th>TLS1.0</th><th>TLS1.1</th><th>TLS1.2</th><th>TLS1.3</th><th>AES-CBC</th><th>AES-GCM</th><th>CHACHAPOLY</th><th>3DES</th><th>RC4</th><th>DHE</th><th>ECDHE</th><th>RSA kx</th></tr>
+<tr><th>Version</th><th>x25519+mlkem768</th><th>secp256r1+mlkem768</th><th>secp384r1+mlkem1024</th></tr>
 </thead>
 <tbody>
-<tr><td>default</td><td></td><td></td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td></td><td>X</td><td></td></tr>
-<tr><td>default_fips</td><td></td><td></td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td></td><td></td><td>X</td><td></td></tr>
-<tr><td>default_tls13</td><td></td><td></td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td></td><td>X</td><td></td></tr>
-<tr><td>20240501</td><td></td><td></td><td>X</td><td></td><td>X</td><td>X</td><td></td><td></td><td></td><td></td><td>X</td><td></td></tr>
-<tr><td>20240502</td><td></td><td></td><td>X</td><td></td><td>X</td><td>X</td><td></td><td></td><td></td><td></td><td>X</td><td></td></tr>
-<tr><td>20240503</td><td></td><td></td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td></td><td></td><td>X</td><td></td></tr>
-<tr><td>20230317</td><td></td><td></td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td></td><td></td><td>X</td><td></td></tr>
-<tr><td>20240331</td><td></td><td></td><td>X</td><td></td><td>X</td><td>X</td><td></td><td></td><td></td><td></td><td>X</td><td></td></tr>
-<tr><td>20190214</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td>X</td><td></td><td>X</td><td>X</td><td>X</td></tr>
-<tr><td>20170718</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td></td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20170405</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td>X</td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20170328</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td>X</td><td></td><td>X</td><td>X</td><td>X</td></tr>
-<tr><td>20170210</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td>X</td><td></td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20160824</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td></td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20160804</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td>X</td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20160411</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td>X</td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20150306</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td>X</td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20150214</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td>X</td><td></td><td>X</td><td></td><td>X</td></tr>
-<tr><td>20150202</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td></td><td></td><td>X</td><td></td><td>X</td><td></td><td>X</td></tr>
-<tr><td>20141001</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td></td><td></td><td>X</td><td>X</td><td>X</td><td></td><td>X</td></tr>
-<tr><td>20190120</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20190121</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20190122</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20190801</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20190802</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td></td><td>X</td><td>X</td></tr>
-<tr><td>20200207</td><td></td><td></td><td></td><td>X</td><td></td><td>X</td><td>X</td><td></td><td></td><td></td><td>X</td><td></td></tr>
-<tr><td>rfc9151</td><td></td><td></td><td>X</td><td>X</td><td></td><td>X</td><td></td><td></td><td></td><td></td><td>X</td><td></td></tr>
+<tr><td>default_pq / 20250721</td><td>X</td><td>X</td><td>X</td></tr>
+<tr><td>20250512</td><td>X</td><td>X</td><td></td></tr>
 </tbody>
 </table>
 </div>
-<p>The “default”, “default_tls13”, and “default_fips” versions are special in that they will be updated with future s2n-tls changes to keep up-to-date with current security best practices. Ciphersuites, protocol versions, and other options may be added or removed, or their internal order of preference might change. <strong>Warning</strong>: this means that the default policies may change as a result of library updates, which could break peers that rely on legacy options.</p>
-<p>In contrast, numbered or dated versions are fixed and will never change.</p>
-<p>The numbered equivalents for the named policies for the current version and
-historical s2n versions are in the “Named Policy History” below. The current
-matching fixed versions are:</p>
+<h3 id="chart-security-policy-version-to-pq-hybrid-key-exchange-methods-kyber"><a class="header" href="#chart-security-policy-version-to-pq-hybrid-key-exchange-methods-kyber">Chart: Security Policy Version To PQ Hybrid Key Exchange Methods (Kyber)</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>“default”</th><th>“default_fips”</th><th>“default_tls13”</th><th>“rfc9151”</th></tr>
+<tr><th>Version</th><th>secp256r1+kyber768</th><th>x25519+kyber768</th><th>secp384r1+kyber768</th><th>secp521r1+kyber1024</th><th>secp256r1+kyber512</th><th>x25519+kyber512</th></tr>
 </thead>
 <tbody>
-<tr><td>20251014</td><td>20251015</td><td>20240503</td><td>20251013</td></tr>
+<tr><td>20240730</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-15</td><td>X</td><td></td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-14</td><td>X</td><td></td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-13</td><td>X</td><td></td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-10</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-09</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-08</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-07</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-3-2023-06-01</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
 </tbody>
 </table>
 </div>
-<p>“rfc9151” is derived from <a href="https://datatracker.ietf.org/doc/html/rfc9151">Commercial National Security Algorithm (CNSA) Suite Profile for TLS and DTLS 1.2 and 1.3</a>. This policy restricts the algorithms allowed for signatures on certificates in the certificate chain to RSA or ECDSA with sha384, which may require you to update your certificates.
-Like the default policies, this policy may also change if the source RFC definition changes.</p>
-<p>s2n-tls does not expose an API to control the order of preference for each ciphersuite or protocol version. s2n-tls follows the following order:</p>
-<ol>
-<li>Always prefer the highest protocol version supported</li>
-<li>Always use forward secrecy where possible. Prefer ECDHE over DHE.</li>
-<li>Prefer encryption ciphers in the following order: AES128, AES256, ChaCha20, 3DES, RC4.</li>
-<li>Prefer record authentication modes in the following order: GCM, Poly1305, SHA256, SHA1, MD5.</li>
-</ol>
-<p><em>NOTE</em>: ChaCha20-Poly1305 cipher suites will not be available if s2n-tls is built with an older libcrypto like openssl-1.0.2. The underlying encrypt/decrypt functions are not available in older versions.</p>
-<h4 id="chacha20-boosting"><a class="header" href="#chacha20-boosting">ChaCha20 Boosting</a></h4>
-<p>s2n-tls usually prefers AES over ChaCha20. However, some clients– particularly mobile or IOT devices– do not support AES hardware acceleration, making AES less efficient and performant than ChaCha20. In this case, clients will indicate their preference for ChaCha20 by listing it first during cipher suite negotiation. Usually s2n-tls servers ignore client preferences, but s2n-tls offers “ChaCha20 boosted” security policies that will choose ChaCha20 over AES if the client indicates a preference for ChaCha20. This is available in the “CloudFront-TLS-1-2-2021-ChaCha20-Boosted” policy, which is identical to the “CloudFront-TLS-1-2-2021” policy listed above but with ChaCha20 Boosting enabled.</p>
-<h3 id="chart-security-policy-version-to-supported-signature-schemes"><a class="header" href="#chart-security-policy-version-to-supported-signature-schemes">Chart: Security Policy Version To Supported Signature Schemes</a></h3>
+<h3 id="chart-security-policy-version-to-signature-schemes"><a class="header" href="#chart-security-policy-version-to-signature-schemes">Chart: Security Policy Version To Signature Schemes</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>version</th><th>RSA PKCS1</th><th>ECDSA</th><th>SHA-1 Legacy</th><th>RSA PSS</th></tr>
+<tr><th>Version</th><th>ML-DSA</th><th>ECDSA</th><th>RSA</th><th>RSA-PSS</th><th>Legacy SHA1</th></tr>
 </thead>
 <tbody>
-<tr><td>default</td><td>X</td><td>X</td><td></td><td>X</td></tr>
-<tr><td>default_fips</td><td>X</td><td>X</td><td></td><td>X</td></tr>
-<tr><td>default_tls13</td><td>X</td><td>X</td><td></td><td>X</td></tr>
-<tr><td>20240501</td><td>X</td><td>X</td><td></td><td>X</td></tr>
-<tr><td>20240502</td><td>X</td><td>X</td><td></td><td>X</td></tr>
-<tr><td>20240503</td><td>X</td><td>X</td><td></td><td>X</td></tr>
-<tr><td>20230317</td><td>X</td><td>X</td><td></td><td>X</td></tr>
-<tr><td>20190214</td><td>X</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20170718</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20170405</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20170328</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20170210</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20160824</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20160804</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20160411</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20150306</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20150214</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20150202</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20141001</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20190120</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20190121</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20190122</td><td>X</td><td></td><td>X</td><td></td></tr>
-<tr><td>20190801</td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
-<tr><td>20190802</td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
-<tr><td>20200207</td><td></td><td>X</td><td></td><td>X</td></tr>
-<tr><td>rfc9151</td><td>X</td><td>X</td><td></td><td>X</td></tr>
+<tr><td>default_pq / 20250721</td><td>X</td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>20250512</td><td>X</td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>20240730</td><td></td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-15</td><td></td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-14</td><td></td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-13</td><td></td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-10</td><td></td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-09</td><td></td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-08</td><td></td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-07</td><td></td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-3-2023-06-01</td><td></td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
 </tbody>
 </table>
 </div>
-<p><em>NOTE</em>: Legacy SHA-1 algorithms are not supported in TLS1.3. Legacy SHA-1 algorithms will be supported only if TLS1.2 has been negotiated and the security policy allows them.</p>
-<p><em>NOTE</em>: RSA-PSS certificates will not be available if s2n-tls is built with an older libcrypto like openssl-1.0.2. RSA certificate signatures with PSS padding (RSA-PSS-RSAE) will still be available, but RSA-PSS certificate signatures with PSS padding (RSA-PSS-PSS) will not be available.</p>
-<h3 id="chart-security-policy-version-to-supported-curvesgroups"><a class="header" href="#chart-security-policy-version-to-supported-curvesgroups">Chart: Security policy version to supported curves/groups</a></h3>
+<h3 id="chart-security-policy-version-to-classic-key-exchange"><a class="header" href="#chart-security-policy-version-to-classic-key-exchange">Chart: Security Policy Version To Classic Key Exchange</a></h3>
+<p>If the peer doesn’t support a PQ hybrid key exchange method, s2n-tls will fall back to a classical option.</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>version</th><th>secp256r1</th><th>secp384r1</th><th>x25519</th></tr>
+<tr><th>Version</th><th>secp256r1</th><th>x25519</th><th>secp384r1</th><th>secp521r1</th><th>DHE</th><th>RSA</th></tr>
 </thead>
 <tbody>
-<tr><td>default</td><td>X</td><td>X</td><td>X</td></tr>
-<tr><td>default_fips</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>default_tls13</td><td>X</td><td>X</td><td>X</td></tr>
-<tr><td>20240501</td><td>X</td><td>X</td><td>X</td></tr>
-<tr><td>20240502</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20240503</td><td>X</td><td>X</td><td>X</td></tr>
-<tr><td>20230317</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20190214</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20170718</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20170405</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20170328</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20170210</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20160824</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20160804</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20160411</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20150306</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20150214</td><td></td><td></td><td></td></tr>
-<tr><td>20150202</td><td></td><td></td><td></td></tr>
-<tr><td>20141001</td><td></td><td></td><td></td></tr>
-<tr><td>20190120</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20190121</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20190122</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20190801</td><td>X</td><td>X</td><td>X</td></tr>
-<tr><td>20190802</td><td>X</td><td>X</td><td></td></tr>
-<tr><td>20200207</td><td>X</td><td>X</td><td>X</td></tr>
-<tr><td>rfc9151</td><td></td><td>X</td><td></td></tr>
+<tr><td>default_pq / 20250721</td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td></tr>
+<tr><td>20250512</td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td></tr>
+<tr><td>20240730</td><td>X</td><td>X</td><td>X</td><td>X</td><td></td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-15</td><td>X</td><td></td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-14</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-13</td><td>X</td><td></td><td>X</td><td>X</td><td></td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-10</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-09</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-08</td><td>X</td><td>X</td><td>X</td><td></td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-07</td><td>X</td><td>X</td><td>X</td><td></td><td></td><td>X</td></tr>
+<tr><td>PQ-TLS-1-3-2023-06-01</td><td>X</td><td></td><td>X</td><td>X</td><td>X</td><td>X</td></tr>
 </tbody>
 </table>
 </div>
-<h3 id="named-policy-history"><a class="header" href="#named-policy-history">Named Policy History</a></h3>
+<h3 id="chart-security-policy-version-to-ciphers"><a class="header" href="#chart-security-policy-version-to-ciphers">Chart: Security Policy Version To Ciphers</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Version</th><th>“default”</th><th>“default_fips”</th><th>“default_tls13”</th><th>“rfc9151”</th></tr>
+<tr><th>Version</th><th>AES-CBC</th><th>AES-GCM</th><th>CHACHAPOLY</th><th>3DES</th></tr>
 </thead>
 <tbody>
-<tr><td>v1.6.0</td><td>20251014</td><td>20251015</td><td>20240503</td><td>20251013</td></tr>
-<tr><td>v1.5.25</td><td>20240501</td><td>20240502</td><td>20240503</td><td>20250429</td></tr>
-<tr><td>v1.4.16</td><td>20240501</td><td>20240502</td><td>20240503</td><td>(*)</td></tr>
-<tr><td>Older</td><td>20170210</td><td>20240416</td><td>20240417</td><td>(*)</td></tr>
+<tr><td>default_pq / 20250721</td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>20250512</td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>20240730</td><td>X</td><td>X</td><td>X</td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-15</td><td>X</td><td>X</td><td></td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-14</td><td>X</td><td>X</td><td></td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-13</td><td>X</td><td>X</td><td></td><td></td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-10</td><td>X</td><td>X</td><td>X*</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-09</td><td>X</td><td>X</td><td>X*</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-08</td><td>X</td><td>X</td><td>X*</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-07</td><td>X</td><td>X</td><td>X*</td><td></td></tr>
+<tr><td>PQ-TLS-1-3-2023-06-01</td><td>X</td><td>X</td><td>X*</td><td>X</td></tr>
+<tr><td>* only for TLS1.3</td><td></td><td></td><td></td><td></td></tr>
 </tbody>
 </table>
 </div>
-<p>(*): No fixed policy available.</p>
+<h3 id="chart-security-policy-version-to-tls-protocol-version"><a class="header" href="#chart-security-policy-version-to-tls-protocol-version">Chart: Security Policy Version To TLS Protocol Version</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Version</th><th>1.2</th><th>1.3</th></tr>
+</thead>
+<tbody>
+<tr><td>default_pq / 20250721</td><td>X</td><td>X</td></tr>
+<tr><td>20250512</td><td>X</td><td>X</td></tr>
+<tr><td>20240730</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-15</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-14</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-12-13</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-10</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-09</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-08</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-2-2023-10-07</td><td>X</td><td>X</td></tr>
+<tr><td>PQ-TLS-1-3-2023-06-01</td><td>X</td><td>X</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="default-policy-history"><a class="header" href="#default-policy-history">Default Policy History</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Version</th><th>“default_pq”</th></tr>
+</thead>
+<tbody>
+<tr><td>v1.5.23</td><td>20250721</td></tr>
+<tr><td>v1.5.19</td><td>20250512</td></tr>
+<tr><td>v1.5.6</td><td>20241001</td></tr>
+<tr><td>v1.5.0</td><td>20240730</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="visibility"><a class="header" href="#visibility">Visibility</a></h2>
+<p>Call <code>s2n_connection_get_kem_group_name</code> to determine if a TLS handshake negotiated PQ key exchange.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="ch05-config.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="ch15-early-data.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="ch07-io.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
-                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -360,13 +344,10 @@ Like the default policies, this policy may also change if the source RFC definit
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="ch05-config.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="ch15-early-data.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="ch07-io.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
-                    </a>
             </nav>
 
         </div>
