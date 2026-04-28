@@ -59,7 +59,14 @@ S2N_RESULT s2n_ktls_key_update_process(struct s2n_connection *conn);
 S2N_RESULT s2n_ktls_set_estimated_sequence_number(struct s2n_connection *conn, size_t bytes_written);
 S2N_RESULT s2n_ktls_check_estimated_record_limit(struct s2n_connection *conn, size_t bytes_requested);
 
-/* Testing */
+/* These functions will be part of the public API. */
+int s2n_connection_ktls_enable_send(struct s2n_connection *conn);
+int s2n_connection_ktls_enable_recv(struct s2n_connection *conn);
+
+/* kTLS testing utilities and sendfile require POSIX socket types
+ * (socklen_t, struct msghdr) that are not available on Windows.
+ */
+#ifndef _WIN32
 typedef int (*s2n_setsockopt_fn)(int socket, int level, int option_name, const void *option_value,
         socklen_t option_len);
 S2N_RESULT s2n_ktls_set_setsockopt_cb(s2n_setsockopt_fn cb);
@@ -71,8 +78,6 @@ S2N_RESULT s2n_ktls_set_recvmsg_cb(struct s2n_connection *conn, s2n_ktls_recvmsg
         void *recv_ctx);
 void s2n_ktls_configure_connection(struct s2n_connection *conn, s2n_ktls_mode ktls_mode);
 
-/* These functions will be part of the public API. */
-int s2n_connection_ktls_enable_send(struct s2n_connection *conn);
-int s2n_connection_ktls_enable_recv(struct s2n_connection *conn);
 int s2n_sendfile(struct s2n_connection *conn, int in_fd, off_t offset, size_t count,
         size_t *bytes_written, s2n_blocked_status *blocked);
+#endif /* _WIN32 */
