@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <sys/param.h>
 #ifdef _WIN32
+    #define WIN32_LEAN_AND_MEAN
+    #define NOCRYPT
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <io.h>
@@ -29,6 +31,10 @@
     #include <netdb.h>
     #include <sys/socket.h>
     #include <unistd.h>
+#endif
+
+#ifndef MIN
+    #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
 #ifndef S2N_INTERN_LIBCRYPTO
@@ -566,7 +572,13 @@ int main(int argc, char *const *argv)
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-#ifndef _WIN32
+#ifdef _WIN32
+    WSADATA wsa_data;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+        fprintf(stderr, "WSAStartup failed\n");
+        exit(1);
+    }
+#else
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
         fprintf(stderr, "Error disabling SIGPIPE\n");
         exit(1);
@@ -577,14 +589,6 @@ int main(int argc, char *const *argv)
         fprintf(stderr, "prefer-throughput and prefer-low-latency options are mutually exclusive\n");
         exit(1);
     }
-
-#ifdef _WIN32
-    WSADATA wsa_data;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
-        fprintf(stderr, "WSAStartup failed\n");
-        exit(1);
-    }
-#endif
 
     GUARD_EXIT(s2n_init(), "Error running s2n_init()");
     printf("libcrypto: %s\n", s2n_libcrypto_get_version_name());

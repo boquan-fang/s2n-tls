@@ -19,6 +19,8 @@
 #include <openssl/x509.h>
 #include <sys/param.h>
 #ifdef _WIN32
+    #define WIN32_LEAN_AND_MEAN
+    #define NOCRYPT
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <io.h>
@@ -34,6 +36,10 @@
     #include <sys/ioctl.h>
     #include <sys/select.h>
     #include <unistd.h>
+#endif
+
+#ifndef MIN
+    #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
 #include "api/s2n.h"

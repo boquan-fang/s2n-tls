@@ -28,6 +28,7 @@
 #include "tls/s2n_connection.h"
 #include "utils/s2n_safety.h"
 
+#ifndef _WIN32
 #if TCP_CORK
     #define S2N_CORK     TCP_CORK
     #define S2N_CORK_ON  1
@@ -41,6 +42,7 @@
     #define S2N_CORK_ON  0
     #define S2N_CORK_OFF 1
 #endif
+#endif /* _WIN32 */
 
 int s2n_socket_quickack(struct s2n_connection *conn)
 {
@@ -84,7 +86,7 @@ int s2n_socket_write_snapshot(struct s2n_connection *conn)
 
 int s2n_socket_read_snapshot(struct s2n_connection *conn)
 {
-#ifdef SO_RCVLOWAT
+#if defined(SO_RCVLOWAT) && !defined(_WIN32)
     socklen_t watlen = sizeof(int);
     POSIX_ENSURE_REF(conn);
     struct s2n_socket_read_io_context *r_io_ctx = (struct s2n_socket_read_io_context *) conn->recv_io_context;
@@ -117,7 +119,7 @@ int s2n_socket_write_restore(struct s2n_connection *conn)
 
 int s2n_socket_read_restore(struct s2n_connection *conn)
 {
-#ifdef SO_RCVLOWAT
+#if defined(SO_RCVLOWAT) && !defined(_WIN32)
     POSIX_ENSURE_REF(conn);
     struct s2n_socket_read_io_context *r_io_ctx = (struct s2n_socket_read_io_context *) conn->recv_io_context;
     POSIX_ENSURE_REF(r_io_ctx);
@@ -195,6 +197,14 @@ int s2n_socket_read(void *io_context, uint8_t *buf, uint32_t len)
      * returned and errno is set appropriately. */
 #ifdef _WIN32
     ssize_t result = recv(rfd, (char *) buf, len, 0);
+    if (result < 0) {
+        int wsa_err = WSAGetLastError();
+        if (wsa_err == WSAEWOULDBLOCK) {
+            errno = EWOULDBLOCK;
+        } else {
+            errno = wsa_err;
+        }
+    }
 #else
     ssize_t result = read(rfd, buf, len);
 #endif
@@ -216,6 +226,14 @@ int s2n_socket_write(void *io_context, const uint8_t *buf, uint32_t len)
      * returned and errno is set appropriately. */
 #ifdef _WIN32
     ssize_t result = send(wfd, (const char *) buf, len, 0);
+    if (result < 0) {
+        int wsa_err = WSAGetLastError();
+        if (wsa_err == WSAEWOULDBLOCK) {
+            errno = EWOULDBLOCK;
+        } else {
+            errno = wsa_err;
+        }
+    }
 #else
     ssize_t result = write(wfd, buf, len);
 #endif
@@ -227,9 +245,12 @@ int s2n_socket_is_ipv6(int fd, uint8_t *ipv6)
 {
     POSIX_ENSURE_REF(ipv6);
 
-    socklen_t len = 0;
     struct sockaddr_storage addr;
-    len = sizeof(addr);
+#ifdef _WIN32
+    int len = sizeof(addr);
+#else
+    socklen_t len = sizeof(addr);
+#endif
     POSIX_GUARD(getpeername(fd, (struct sockaddr *) &addr, &len));
 
     *ipv6 = 0;
