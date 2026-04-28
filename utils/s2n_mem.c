@@ -87,10 +87,11 @@ static int s2n_mem_free_mlock_impl(void *ptr, uint32_t size)
     /* Perform a best-effort unlock: ignore any errors during unlocking. */
 #ifdef _WIN32
     VirtualUnlock(ptr, size);
+    _aligned_free(ptr);
 #else
     munlock(ptr, size);
-#endif
     free(ptr);
+#endif
     return S2N_SUCCESS;
 }
 
@@ -131,10 +132,12 @@ static int s2n_mem_malloc_mlock_impl(void **ptr, uint32_t requested, uint32_t *a
 #endif
 
 #ifdef _WIN32
+    if (!VirtualLock(*ptr, *allocated)) {
 #else
     if (mlock(*ptr, *allocated) != 0) {
 #endif
-        /* When mlock fails, no memory will be locked, so we don't use munlock on free */
+        /* When mlock/VirtualLock fails, no memory will be locked, so we don't
+         * use munlock/VirtualUnlock on free */
         POSIX_GUARD(s2n_mem_free_no_mlock_impl(*ptr, *allocated));
         POSIX_BAIL(S2N_ERR_MLOCK);
     }
