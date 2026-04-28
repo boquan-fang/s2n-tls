@@ -22,7 +22,7 @@
     #define NOMINMAX
 #endif
 
-/* Windows platform doesn't have MIN/MAX. Hence, we redefine it for Windows. */
+/* Windows platform does not have MIN/MAX in sys/param.h */
 #ifndef MIN
     #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif

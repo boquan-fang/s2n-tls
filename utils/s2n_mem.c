@@ -22,11 +22,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 #ifdef _WIN32
-    #include <windows.h>
+#include <windows.h>
 #else
-    #include <sys/mman.h>
-    #include <sys/param.h>
-    #include <unistd.h>
+#include <sys/mman.h>
+#include <sys/param.h>
+#include <unistd.h>
 #endif
 
 #include "error/s2n_errno.h"
@@ -131,17 +131,13 @@ static int s2n_mem_malloc_mlock_impl(void **ptr, uint32_t requested, uint32_t *a
 #endif
 
 #ifdef _WIN32
-    if (!VirtualLock(*ptr, *allocated)) {
-        POSIX_GUARD(s2n_mem_free_no_mlock_impl(*ptr, *allocated));
-        POSIX_BAIL(S2N_ERR_MLOCK);
-    }
 #else
     if (mlock(*ptr, *allocated) != 0) {
+#endif
         /* When mlock fails, no memory will be locked, so we don't use munlock on free */
         POSIX_GUARD(s2n_mem_free_no_mlock_impl(*ptr, *allocated));
         POSIX_BAIL(S2N_ERR_MLOCK);
     }
-#endif
 
     POSIX_ENSURE(*ptr != NULL, S2N_ERR_ALLOC);
 
@@ -360,11 +356,11 @@ int s2n_free_without_wipe(struct s2n_blob *b)
         void *data = b->data;
         uint32_t allocated = b->allocated;
         /* Set data point to NULL first to prevent potential double-free on s2n_mem_free_cb error path */
-        *b = (struct s2n_blob) { 0 };
+        *b = (struct s2n_blob){ 0 };
         POSIX_ENSURE(s2n_mem_free_cb(data, allocated) >= S2N_SUCCESS, S2N_ERR_CANCELLED);
     }
 
-    *b = (struct s2n_blob) { 0 };
+    *b = (struct s2n_blob){ 0 };
 
     return S2N_SUCCESS;
 }
