@@ -15,10 +15,15 @@
 
 #include "utils/s2n_socket.h"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include "tls/s2n_connection.h"
 #include "utils/s2n_safety.h"
@@ -69,7 +74,7 @@ int s2n_socket_write_snapshot(struct s2n_connection *conn)
     struct s2n_socket_write_io_context *w_io_ctx = (struct s2n_socket_write_io_context *) conn->send_io_context;
     POSIX_ENSURE_REF(w_io_ctx);
 
-    getsockopt(w_io_ctx->fd, IPPROTO_TCP, S2N_CORK, &w_io_ctx->original_cork_val, &corklen);
+    getsockopt(w_io_ctx->fd, IPPROTO_TCP, S2N_CORK, (void *) &w_io_ctx->original_cork_val, &corklen);
     POSIX_ENSURE_EQ(corklen, sizeof(int));
     w_io_ctx->original_cork_is_set = 1;
 #endif
@@ -85,7 +90,7 @@ int s2n_socket_read_snapshot(struct s2n_connection *conn)
     struct s2n_socket_read_io_context *r_io_ctx = (struct s2n_socket_read_io_context *) conn->recv_io_context;
     POSIX_ENSURE_REF(r_io_ctx);
 
-    getsockopt(r_io_ctx->fd, SOL_SOCKET, SO_RCVLOWAT, &r_io_ctx->original_rcvlowat_val, &watlen);
+    getsockopt(r_io_ctx->fd, SOL_SOCKET, SO_RCVLOWAT, (void *) &r_io_ctx->original_rcvlowat_val, &watlen);
     POSIX_ENSURE_EQ(watlen, sizeof(int));
     r_io_ctx->original_rcvlowat_is_set = 1;
 #endif
@@ -103,7 +108,7 @@ int s2n_socket_write_restore(struct s2n_connection *conn)
     if (!w_io_ctx->original_cork_is_set) {
         return 0;
     }
-    setsockopt(w_io_ctx->fd, IPPROTO_TCP, S2N_CORK, &w_io_ctx->original_cork_val, sizeof(w_io_ctx->original_cork_val));
+    setsockopt(w_io_ctx->fd, IPPROTO_TCP, S2N_CORK, (void *) &w_io_ctx->original_cork_val, sizeof(w_io_ctx->original_cork_val));
     w_io_ctx->original_cork_is_set = 0;
 #endif
 
@@ -120,7 +125,7 @@ int s2n_socket_read_restore(struct s2n_connection *conn)
     if (!r_io_ctx->original_rcvlowat_is_set) {
         return 0;
     }
-    setsockopt(r_io_ctx->fd, SOL_SOCKET, SO_RCVLOWAT, &r_io_ctx->original_rcvlowat_val, sizeof(r_io_ctx->original_rcvlowat_val));
+    setsockopt(r_io_ctx->fd, SOL_SOCKET, SO_RCVLOWAT, (void *) &r_io_ctx->original_rcvlowat_val, sizeof(r_io_ctx->original_rcvlowat_val));
     r_io_ctx->original_rcvlowat_is_set = 0;
 #endif
 
@@ -151,7 +156,7 @@ int s2n_socket_write_cork(struct s2n_connection *conn)
     POSIX_ENSURE_REF(w_io_ctx);
 
     /* Ignore the return value, if it fails it fails */
-    setsockopt(w_io_ctx->fd, IPPROTO_TCP, S2N_CORK, &optval, sizeof(optval));
+    setsockopt(w_io_ctx->fd, IPPROTO_TCP, S2N_CORK, (void *) &optval, sizeof(optval));
 #endif
 
     return 0;
@@ -167,7 +172,7 @@ int s2n_socket_write_uncork(struct s2n_connection *conn)
     POSIX_ENSURE_REF(w_io_ctx);
 
     /* Ignore the return value, if it fails it fails */
-    setsockopt(w_io_ctx->fd, IPPROTO_TCP, S2N_CORK, &optval, sizeof(optval));
+    setsockopt(w_io_ctx->fd, IPPROTO_TCP, S2N_CORK, (void *) &optval, sizeof(optval));
 #endif
 
     return 0;
@@ -188,7 +193,11 @@ int s2n_socket_read(void *io_context, uint8_t *buf, uint32_t len)
 
     /* On success, the number of bytes read is returned. On failure, -1 is
      * returned and errno is set appropriately. */
+#ifdef _WIN32
+    ssize_t result = recv(rfd, (char *) buf, len, 0);
+#else
     ssize_t result = read(rfd, buf, len);
+#endif
     POSIX_ENSURE_INCLUSIVE_RANGE(INT_MIN, result, INT_MAX);
     return result;
 }
@@ -205,7 +214,11 @@ int s2n_socket_write(void *io_context, const uint8_t *buf, uint32_t len)
 
     /* On success, the number of bytes written is returned. On failure, -1 is
      * returned and errno is set appropriately. */
+#ifdef _WIN32
+    ssize_t result = send(wfd, (const char *) buf, len, 0);
+#else
     ssize_t result = write(wfd, buf, len);
+#endif
     POSIX_ENSURE_INCLUSIVE_RANGE(INT_MIN, result, INT_MAX);
     return result;
 }

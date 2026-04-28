@@ -15,17 +15,21 @@
 
 #pragma once
 
-#include <sys/socket.h>
-
 #include "api/unstable/ktls.h"
 #include "tls/s2n_connection.h"
-/* Define headers needed to enable and use kTLS.
+
+/* kTLS is Linux-only. On all other platforms the functions declared below
+ * are provided as stubs (in s2n_ktls.c) that return S2N_ERR_KTLS_UNSUPPORTED_PLATFORM.
  *
- * The inline header definitions are required to compile kTLS specific code.
- * kTLS has been tested on linux. For all other platforms, kTLS is marked as
- * unsupported, and will return an unsupported error.
+ * The Linux-specific headers, kTLS parameters, testing utilities, and sendfile
+ * are gated behind !_WIN32 so that the rest of the library compiles cleanly on
+ * Windows without pulling in POSIX socket types (socklen_t, struct msghdr, etc.).
  */
-#include "tls/s2n_ktls_parameters.h"
+
+#ifndef _WIN32
+    #include <sys/socket.h>
+    #include "tls/s2n_ktls_parameters.h"
+#endif
 
 /* A set of kTLS configurations representing the combination of sending
  * and receiving.
@@ -56,7 +60,12 @@ S2N_RESULT s2n_ktls_key_update_process(struct s2n_connection *conn);
 S2N_RESULT s2n_ktls_set_estimated_sequence_number(struct s2n_connection *conn, size_t bytes_written);
 S2N_RESULT s2n_ktls_check_estimated_record_limit(struct s2n_connection *conn, size_t bytes_requested);
 
-/* Testing */
+/*
+ * Everything below requires POSIX socket types (socklen_t, struct msghdr)
+ * that are not available on Windows. These are testing utilities, the
+ * setsockopt callback, and sendfile.
+ */
+#ifndef _WIN32
 typedef int (*s2n_setsockopt_fn)(int socket, int level, int option_name, const void *option_value,
         socklen_t option_len);
 S2N_RESULT s2n_ktls_set_setsockopt_cb(s2n_setsockopt_fn cb);
@@ -73,3 +82,4 @@ int s2n_connection_ktls_enable_send(struct s2n_connection *conn);
 int s2n_connection_ktls_enable_recv(struct s2n_connection *conn);
 int s2n_sendfile(struct s2n_connection *conn, int in_fd, off_t offset, size_t count,
         size_t *bytes_written, s2n_blocked_status *blocked);
+#endif /* _WIN32 */

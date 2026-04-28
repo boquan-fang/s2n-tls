@@ -16,6 +16,12 @@
 #include "tls/s2n_connection.h"
 #include "tls/s2n_ktls.h"
 
+/* kTLS test utilities depend on POSIX socket types (struct msghdr) and are
+ * not available on Windows. Tests that include this header should skip on
+ * Windows via s2n_ktls_is_supported_on_platform().
+ */
+#ifndef _WIN32
+
 #define S2N_TEST_KTLS_MOCK_HEADER_SIZE     3
 #define S2N_TEST_KTLS_MOCK_HEADER_TAG_SIZE 1
 
@@ -74,3 +80,5 @@ S2N_RESULT s2n_test_validate_ancillary(struct s2n_test_ktls_io_stuffer *ktls_io,
         uint8_t expected_record_type, uint16_t expected_len);
 S2N_RESULT s2n_test_records_in_ancillary(struct s2n_test_ktls_io_stuffer *ktls_io,
         uint16_t expected_records);
+
+#endif /* _WIN32 */

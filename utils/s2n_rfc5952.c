@@ -16,7 +16,11 @@
 #include "utils/s2n_rfc5952.h"
 
 #include <stdio.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
+#endif
 #include <sys/types.h>
 
 #include "error/s2n_errno.h"

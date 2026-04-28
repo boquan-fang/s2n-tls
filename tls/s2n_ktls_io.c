@@ -13,6 +13,11 @@
  * permissions and limitations under the License.
  */
 
+#ifdef _WIN32
+/* kTLS is not supported on Windows. This file compiles to nothing. */
+typedef int s2n_ktls_io_unused;
+#else /* _WIN32 */
+
 #if defined(__FreeBSD__) || defined(__APPLE__)
     /* https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_socket.h.html
      * The POSIX standard does not define the CMSG_LEN and CMSG_SPACE macros. FreeBSD
@@ -487,3 +492,5 @@ int s2n_ktls_read_full_record(struct s2n_connection *conn, uint8_t *record_type)
     POSIX_GUARD_RESULT(s2n_recv_in_init(conn, bytes_read, bytes_read));
     return S2N_SUCCESS;
 }
+
+#endif /* _WIN32 */

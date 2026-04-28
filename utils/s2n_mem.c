@@ -21,9 +21,13 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <unistd.h>
+#endif
 
 #include "error/s2n_errno.h"
 #include "utils/s2n_blob.h"
@@ -47,6 +51,11 @@ static s2n_mem_free_callback s2n_mem_free_cb = s2n_mem_free_mlock_impl;
 
 static int s2n_mem_init_impl(void)
 {
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    page_size = (uint32_t) si.dwPageSize;
+#else
     long sysconf_rc = sysconf(_SC_PAGESIZE);
 
     /* sysconf must not error, and page_size cannot be 0 */
@@ -56,6 +65,7 @@ static int s2n_mem_init_impl(void)
     long max_page_size = MIN(UINT32_MAX, LONG_MAX);
     POSIX_ENSURE_LTE(sysconf_rc, max_page_size);
     page_size = (uint32_t) sysconf_rc;
+#endif
 
     if (getenv("S2N_DONT_MLOCK") || s2n_in_unit_test()) {
         s2n_mem_malloc_cb = s2n_mem_malloc_no_mlock_impl;
@@ -74,8 +84,12 @@ static int s2n_mem_cleanup_impl(void)
 
 static int s2n_mem_free_mlock_impl(void *ptr, uint32_t size)
 {
-    /* Perform a best-effort `munlock`: ignore any errors during unlocking. */
+    /* Perform a best-effort unlock: ignore any errors during unlocking. */
+#ifdef _WIN32
+    VirtualUnlock(ptr, size);
+#else
     munlock(ptr, size);
+#endif
     free(ptr);
     return S2N_SUCCESS;
 }
@@ -97,7 +111,12 @@ static int s2n_mem_malloc_mlock_impl(void **ptr, uint32_t requested, uint32_t *a
     POSIX_GUARD(s2n_align_to(requested, page_size, &allocate));
 
     *ptr = NULL;
+#ifdef _WIN32
+    *ptr = _aligned_malloc(allocate, page_size);
+    POSIX_ENSURE(*ptr != NULL, S2N_ERR_ALLOC);
+#else
     POSIX_ENSURE(posix_memalign(ptr, page_size, allocate) == 0, S2N_ERR_ALLOC);
+#endif
     *allocated = allocate;
 
 /*
@@ -111,7 +130,10 @@ static int s2n_mem_malloc_mlock_impl(void **ptr, uint32_t requested, uint32_t *a
     }
 #endif
 
+#ifdef _WIN32
+#else
     if (mlock(*ptr, *allocated) != 0) {
+#endif
         /* When mlock fails, no memory will be locked, so we don't use munlock on free */
         POSIX_GUARD(s2n_mem_free_no_mlock_impl(*ptr, *allocated));
         POSIX_BAIL(S2N_ERR_MLOCK);

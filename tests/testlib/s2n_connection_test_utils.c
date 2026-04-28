@@ -15,9 +15,14 @@
 
 #include <fcntl.h>
 #include <stdio.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
+#endif
+#include <sys/types.h>
 
 #include "testlib/s2n_testlib.h"
 #include "tls/s2n_connection.h"
@@ -26,12 +31,22 @@
 
 int s2n_fd_set_blocking(int fd)
 {
+#ifdef _WIN32
+    u_long mode = 0;
+    return ioctlsocket(fd, FIONBIO, &mode);
+#else
     return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK);
+#endif
 }
 
 int s2n_fd_set_non_blocking(int fd)
 {
+#ifdef _WIN32
+    u_long mode = 1;
+    return ioctlsocket(fd, FIONBIO, &mode);
+#else
     return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+#endif
 }
 
 static int buffer_read(void *io_context, uint8_t *buf, uint32_t len)
@@ -137,14 +152,41 @@ S2N_RESULT s2n_connections_set_io_stuffer_pair(struct s2n_connection *client, st
 
 int s2n_io_pair_init(struct s2n_test_io_pair *io_pair)
 {
+#ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
+#endif
 
+#ifdef _WIN32
+    /* Windows doesn't have socketpair. Emulate with TCP loopback. */
+    int listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    POSIX_ENSURE(listener >= 0, S2N_ERR_IO);
+
+    struct sockaddr_in addr = { 0 };
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+
+    POSIX_ENSURE(bind(listener, (struct sockaddr *) &addr, sizeof(addr)) == 0, S2N_ERR_IO);
+    POSIX_ENSURE(listen(listener, 1) == 0, S2N_ERR_IO);
+
+    int addrlen = sizeof(addr);
+    POSIX_ENSURE(getsockname(listener, (struct sockaddr *) &addr, &addrlen) == 0, S2N_ERR_IO);
+
+    io_pair->client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    POSIX_ENSURE(io_pair->client >= 0, S2N_ERR_IO);
+    POSIX_ENSURE(connect(io_pair->client, (struct sockaddr *) &addr, sizeof(addr)) == 0, S2N_ERR_IO);
+
+    io_pair->server = accept(listener, NULL, NULL);
+    POSIX_ENSURE(io_pair->server >= 0, S2N_ERR_IO);
+
+    closesocket(listener);
+#else
     int socket_pair[2];
-
     POSIX_GUARD(socketpair(AF_UNIX, SOCK_STREAM, 0, socket_pair));
 
     io_pair->client = socket_pair[0];
     io_pair->server = socket_pair[1];
+#endif
 
     return 0;
 }
@@ -188,10 +230,18 @@ int s2n_io_pair_close(struct s2n_test_io_pair *io_pair)
 int s2n_io_pair_close_one_end(struct s2n_test_io_pair *io_pair, int mode_to_close)
 {
     if (mode_to_close == S2N_CLIENT && io_pair->client != S2N_CLOSED_FD) {
+#ifdef _WIN32
+        POSIX_GUARD(closesocket(io_pair->client));
+#else
         POSIX_GUARD(close(io_pair->client));
+#endif
         io_pair->client = S2N_CLOSED_FD;
     } else if (mode_to_close == S2N_SERVER && io_pair->server != S2N_CLOSED_FD) {
+#ifdef _WIN32
+        POSIX_GUARD(closesocket(io_pair->server));
+#else
         POSIX_GUARD(close(io_pair->server));
+#endif
         io_pair->server = S2N_CLOSED_FD;
     }
     return 0;

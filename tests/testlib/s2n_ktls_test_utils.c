@@ -15,6 +15,11 @@
 
 #include "testlib/s2n_ktls_test_utils.h"
 
+#ifdef _WIN32
+/* kTLS tests are not supported on Windows */
+typedef int s2n_ktls_test_utils_unused;
+#else
+
 S2N_RESULT s2n_ktls_set_control_data(struct msghdr *msg, char *buf, size_t buf_size,
         int cmsg_type, uint8_t record_type);
 S2N_RESULT s2n_ktls_get_control_data(struct msghdr *msg, int cmsg_type, uint8_t *record_type);
@@ -247,3 +252,5 @@ S2N_RESULT s2n_test_records_in_ancillary(struct s2n_test_ktls_io_stuffer *ktls_i
     RESULT_ENSURE_EQ(extra, 0);
     return S2N_RESULT_OK;
 }
+
+#endif /* _WIN32 */
