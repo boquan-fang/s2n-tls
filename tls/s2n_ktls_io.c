@@ -23,7 +23,11 @@
      */
     #undef _POSIX_C_SOURCE
 #endif
-#include <sys/socket.h>
+
+/* KTLS is only available on Linux */
+#ifndef _WIN32
+    #include <sys/socket.h>
+#endif
 
 #ifdef S2N_LINUX_SENDFILE
     #include <sys/sendfile.h>

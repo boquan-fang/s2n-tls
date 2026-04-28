@@ -13,12 +13,17 @@
  * permissions and limitations under the License.
  */
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+#else
+    #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <sys/socket.h>
+#endif
 #include <openssl/asn1.h>
 #include <openssl/err.h>
 #include <openssl/x509.h>
-#include <sys/socket.h>
 
 #include "crypto/s2n_libcrypto.h"
 #include "crypto/s2n_openssl_x509.h"
@@ -151,7 +156,7 @@ int s2n_x509_validator_init_no_x509_validation(struct s2n_x509_validator *valida
     validator->state = INIT;
     validator->cert_chain_from_wire = sk_X509_new_null();
     validator->crl_lookup_list = NULL;
-    validator->cert_validation_info = (struct s2n_cert_validation_info){ 0 };
+    validator->cert_validation_info = (struct s2n_cert_validation_info) { 0 };
     validator->cert_validation_cb_invoked = false;
 
     return 0;
@@ -172,7 +177,7 @@ int s2n_x509_validator_init(struct s2n_x509_validator *validator, struct s2n_x50
     validator->cert_chain_from_wire = sk_X509_new_null();
     validator->state = INIT;
     validator->crl_lookup_list = NULL;
-    validator->cert_validation_info = (struct s2n_cert_validation_info){ 0 };
+    validator->cert_validation_info = (struct s2n_cert_validation_info) { 0 };
     validator->cert_validation_cb_invoked = false;
 
     return 0;

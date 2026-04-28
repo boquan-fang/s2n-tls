@@ -15,7 +15,10 @@
 
 #pragma once
 
-#include <sys/socket.h>
+/* KTLS is only available on Linux */
+#ifndef _WIN32
+    #include <sys/socket.h>
+#endif
 
 #include "api/unstable/ktls.h"
 #include "tls/s2n_connection.h"

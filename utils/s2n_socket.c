@@ -15,10 +15,15 @@
 
 #include "utils/s2n_socket.h"
 
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+#else
+    #include <netinet/in.h>
+    #include <netinet/tcp.h>
+    #include <sys/socket.h>
+    #include <unistd.h>
+#endif
 
 #include "tls/s2n_connection.h"
 #include "utils/s2n_safety.h"
