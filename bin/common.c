@@ -21,10 +21,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <io.h>
+    #define strcasecmp _stricmp
+#else
+    #include <strings.h>
+    #include <sys/mman.h>
+    #include <unistd.h>
+#endif
 
 #include "api/s2n.h"
 #include "error/s2n_errno.h"
@@ -358,8 +365,17 @@ int s2n_set_common_server_config(int max_early_data, struct s2n_config *config, 
             struct stat st;
             GUARD_EXIT(fstat(fd, &st), "Error fstat-ing session ticket key file");
 
+#ifndef _WIN32
             st_key = mmap(0, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
             POSIX_ENSURE(st_key != MAP_FAILED, S2N_ERR_MMAP);
+#else
+            st_key = malloc(st.st_size);
+            GUARD_EXIT(st_key == NULL ? -1 : 0, "Error allocating memory for session ticket key");
+            if (read(fd, st_key, st.st_size) != st.st_size) {
+                fprintf(stderr, "Error reading session ticket key file\n");
+                exit(1);
+            }
+#endif
 
             st_key_length = st.st_size;
 

@@ -17,14 +17,21 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <inttypes.h>
-#include <netdb.h>
-#include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <sys/mman.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <io.h>
+    #include <process.h>
+#else
+    #include <netdb.h>
+    #include <signal.h>
+    #include <sys/mman.h>
+    #include <sys/socket.h>
+    #include <unistd.h>
+#endif
 
 #ifndef S2N_INTERN_LIBCRYPTO
     #include <openssl/crypto.h>
@@ -517,10 +524,12 @@ int main(int argc, char *const *argv)
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
+#ifndef _WIN32
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
         fprintf(stderr, "Error disabling SIGPIPE\n");
         exit(1);
     }
+#endif
 
     if ((r = getaddrinfo(host, port, &hints, &ai)) < 0) {
         fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(r));
@@ -533,7 +542,7 @@ int main(int argc, char *const *argv)
     }
 
     r = 1;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &r, sizeof(int)) < 0) {
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const char *) &r, sizeof(int)) < 0) {
         fprintf(stderr, "setsockopt error: %s\n", strerror(errno));
         exit(1);
     }
@@ -547,6 +556,14 @@ int main(int argc, char *const *argv)
         fprintf(stderr, "listen error: %s\n", strerror(errno));
         exit(1);
     }
+
+#ifdef _WIN32
+    WSADATA wsa_data;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+        fprintf(stderr, "WSAStartup failed\n");
+        exit(1);
+    }
+#endif
 
     GUARD_EXIT(s2n_init(), "Error running s2n_init()");
     printf("libcrypto: %s\n", s2n_libcrypto_get_version_name());
@@ -600,7 +617,15 @@ int main(int argc, char *const *argv)
                 exit(1);
             }
 
+#ifdef _WIN32
+            uint8_t *ocsp_response = malloc(st.st_size);
+            if (!ocsp_response || read(fd, ocsp_response, st.st_size) != st.st_size) {
+                fprintf(stderr, "Error reading OCSP response file\n");
+                exit(1);
+            }
+#else
             uint8_t *ocsp_response = mmap(0, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+#endif
             if (s2n_cert_chain_and_key_set_ocsp_data(chain_and_key, ocsp_response, st.st_size) < 0) {
                 fprintf(stderr, "Error adding ocsp response: '%s'\n", s2n_strerror(s2n_errno, "EN"));
                 exit(1);
@@ -615,6 +640,7 @@ int main(int argc, char *const *argv)
     s2n_set_common_server_config(max_early_data, config, conn_settings, cipher_prefs, session_ticket_key_file_path);
 
     if (parallelize) {
+#ifndef _WIN32
         struct sigaction sa;
 
         sa.sa_handler = SIG_IGN;
@@ -623,6 +649,7 @@ int main(int argc, char *const *argv)
 #endif
         sigemptyset(&sa.sa_mask);
         sigaction(SIGCHLD, &sa, NULL);
+#endif
     }
 
     if (alpn) {
@@ -659,16 +686,28 @@ int main(int argc, char *const *argv)
     int fd = 0;
     while ((fd = accept(sockfd, ai->ai_addr, &ai->ai_addrlen)) > 0) {
         if (non_blocking) {
+#ifdef _WIN32
+            u_long mode = 1;
+            if (ioctlsocket(fd, FIONBIO, &mode) != 0) {
+                fprintf(stderr, "ioctlsocket error: %s\n", strerror(errno));
+                exit(1);
+            }
+#else
             int flags = fcntl(sockfd, F_GETFL, 0);
             if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
                 fprintf(stderr, "fcntl error: %s\n", strerror(errno));
                 exit(1);
             }
+#endif
         }
 
         if (!parallelize) {
             int rc = handle_connection(fd, config, conn_settings);
+#ifdef _WIN32
+            closesocket(fd);
+#else
             close(fd);
+#endif
             if (rc < 0) {
                 exit(rc);
             }
@@ -682,6 +721,14 @@ int main(int argc, char *const *argv)
                 }
             }
         } else {
+#ifdef _WIN32
+            /* fork() is not available on Windows. Run inline. */
+            int rc = handle_connection(fd, config, conn_settings);
+            closesocket(fd);
+            if (rc < 0) {
+                exit(rc);
+            }
+#else
             /* Fork Process, one for the Acceptor (parent), and another for the Handler (child). */
             pid_t child_pid = fork();
 
@@ -699,6 +746,7 @@ int main(int argc, char *const *argv)
                 close(fd);
                 continue;
             }
+#endif
         }
     }
 

@@ -15,14 +15,26 @@
 
 #include <errno.h>
 #include <inttypes.h>
-#include <netdb.h>
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
-#include <poll.h>
-#include <sys/ioctl.h>
 #include <sys/param.h>
-#include <sys/select.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <io.h>
+    #include <process.h>
+    #define STDIN_FILENO  0
+    #define STDOUT_FILENO 1
+    #define getpid        _getpid
+    #define read          _read
+    #define write         _write
+#else
+    #include <netdb.h>
+    #include <poll.h>
+    #include <sys/ioctl.h>
+    #include <sys/select.h>
+    #include <unistd.h>
+#endif
 
 #include "api/s2n.h"
 #include "api/unstable/fingerprint.h"
@@ -68,7 +80,11 @@ void print_s2n_error(const char *app_error)
 /* Poll the given file descriptor for an event determined by the blocked status */
 int wait_for_event(int fd, s2n_blocked_status blocked)
 {
+#ifdef _WIN32
+    WSAPOLLFD reader = { .fd = fd, .events = 0 };
+#else
     struct pollfd reader = { .fd = fd, .events = 0 };
+#endif
 
     switch (blocked) {
         case S2N_NOT_BLOCKED:
@@ -86,7 +102,11 @@ int wait_for_event(int fd, s2n_blocked_status blocked)
             return S2N_SUCCESS;
     }
 
+#ifdef _WIN32
+    if (WSAPoll(&reader, 1, -1) < 0) {
+#else
     if (poll(&reader, 1, -1) < 0) {
+#endif
         fprintf(stderr, "Failed to poll connection: %s\n", strerror(errno));
         S2N_ERROR_PRESERVE_ERRNO();
     }
@@ -367,6 +387,67 @@ void send_data(struct s2n_connection *conn, int sockfd, const char *data, uint64
 
 int echo(struct s2n_connection *conn, int sockfd, bool *stop_echo)
 {
+#ifdef _WIN32
+    /* On Windows, we cannot poll() stdin and a socket together.
+     * Use WaitForMultipleObjects on the stdin handle and a socket event. */
+    HANDLE handles[2];
+    handles[0] = (HANDLE) _get_osfhandle(STDIN_FILENO);
+    WSAEVENT sock_event = WSACreateEvent();
+    WSAEventSelect(sockfd, sock_event, FD_READ | FD_CLOSE);
+    handles[1] = sock_event;
+
+    errno = 0;
+    s2n_blocked_status blocked = S2N_NOT_BLOCKED;
+
+    while (!(*stop_echo)) {
+        DWORD result = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+        char buffer[STDIO_BUFSIZE];
+        ssize_t bytes_read = 0;
+
+        if (result == WAIT_OBJECT_0 + 1 || result == WAIT_TIMEOUT) {
+            /* Socket is readable */
+            WSAResetEvent(sock_event);
+            s2n_errno = S2N_ERR_T_OK;
+            bytes_read = s2n_recv(conn, buffer, STDIO_BUFSIZE, &blocked);
+            if (bytes_read == 0) {
+                WSACloseEvent(sock_event);
+                return 0;
+            }
+            if (bytes_read < 0) {
+                if (s2n_error_get_type(s2n_errno) == S2N_ERR_T_BLOCKED) {
+                    continue;
+                }
+                fprintf(stderr, "Error reading from connection: '%s'\n", s2n_strerror(s2n_errno, "EN"));
+                exit(1);
+            }
+
+            char *buf_ptr = buffer;
+            do {
+                ssize_t bytes_written = write(STDOUT_FILENO, buf_ptr, bytes_read);
+                if (bytes_written < 0) {
+                    fprintf(stderr, "Error writing to stdout\n");
+                    exit(1);
+                }
+                bytes_read -= bytes_written;
+                buf_ptr += bytes_written;
+            } while (bytes_read > 0);
+        }
+
+        if (result == WAIT_OBJECT_0) {
+            /* Stdin is readable */
+            bytes_read = read(STDIN_FILENO, buffer, sizeof(buffer));
+            if (bytes_read <= 0) {
+                fprintf(stderr, "Exiting on stdin EOF\n");
+                WSACloseEvent(sock_event);
+                return 0;
+            }
+            send_data(conn, sockfd, buffer, bytes_read, &blocked);
+        }
+    }
+
+    WSACloseEvent(sock_event);
+    return 0;
+#else
     struct pollfd readers[2];
 
     readers[0].fd = sockfd;
@@ -477,4 +558,5 @@ int echo(struct s2n_connection *conn, int sockfd, bool *stop_echo)
     } while (p < 0 && errno == EINTR);
 
     return 0;
+#endif /* _WIN32 */
 }

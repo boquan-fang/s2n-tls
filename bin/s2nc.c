@@ -16,13 +16,20 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <inttypes.h>
-#include <netdb.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/param.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <io.h>
+    #include <process.h>
+#else
+    #include <netdb.h>
+    #include <sys/socket.h>
+    #include <unistd.h>
+#endif
 
 #ifndef S2N_INTERN_LIBCRYPTO
     #include <openssl/crypto.h>
@@ -559,15 +566,25 @@ int main(int argc, char *const *argv)
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
+#ifndef _WIN32
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
         fprintf(stderr, "Error disabling SIGPIPE\n");
         exit(1);
     }
+#endif
 
     if (prefer_low_latency && prefer_throughput) {
         fprintf(stderr, "prefer-throughput and prefer-low-latency options are mutually exclusive\n");
         exit(1);
     }
+
+#ifdef _WIN32
+    WSADATA wsa_data;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+        fprintf(stderr, "WSAStartup failed\n");
+        exit(1);
+    }
+#endif
 
     GUARD_EXIT(s2n_init(), "Error running s2n_init()");
     printf("libcrypto: %s\n", s2n_libcrypto_get_version_name());
@@ -595,7 +612,11 @@ int main(int argc, char *const *argv)
             }
 
             if (connect(sockfd, ai->ai_addr, ai->ai_addrlen) == -1) {
+#ifdef _WIN32
+                closesocket(sockfd);
+#else
                 close(sockfd);
+#endif
                 continue;
             }
 
@@ -610,11 +631,19 @@ int main(int argc, char *const *argv)
         }
 
         if (non_blocking) {
+#ifdef _WIN32
+            u_long mode = 1;
+            if (ioctlsocket(sockfd, FIONBIO, &mode) != 0) {
+                fprintf(stderr, "ioctlsocket error: %s\n", strerror(errno));
+                exit(1);
+            }
+#else
             int flags = fcntl(sockfd, F_GETFL, 0);
             if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK) < 0) {
                 fprintf(stderr, "fcntl error: %s\n", strerror(errno));
                 exit(1);
             }
+#endif
         }
 
         struct s2n_config *config = s2n_config_new();
@@ -806,7 +835,11 @@ int main(int argc, char *const *argv)
 
         GUARD_EXIT(s2n_config_free(config), "Error freeing configuration");
 
+#ifdef _WIN32
+        closesocket(sockfd);
+#else
         close(sockfd);
+#endif
         reconnect--;
 
     } while (reconnect >= 0);
