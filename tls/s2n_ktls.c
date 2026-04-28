@@ -15,13 +15,97 @@
 
 #include "tls/s2n_ktls.h"
 
-#include "crypto/s2n_ktls_crypto.h"
-#include "crypto/s2n_sequence.h"
-#include "tls/s2n_key_update.h"
-#include "tls/s2n_prf.h"
-#include "tls/s2n_tls.h"
-#include "tls/s2n_tls13_handshake.h"
-#include "tls/s2n_tls13_key_schedule.h"
+#ifdef _WIN32
+
+/* kTLS is not supported on Windows. Provide minimal stubs. */
+bool s2n_ktls_is_supported_on_platform()
+{
+    return false;
+}
+
+S2N_RESULT s2n_ktls_get_file_descriptor(struct s2n_connection *conn, s2n_ktls_mode ktls_mode, int *fd)
+{
+    RESULT_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+int s2n_ktls_send_cb(void *io_context, const uint8_t *buf, uint32_t len)
+{
+    POSIX_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+S2N_RESULT s2n_ktls_sendmsg(void *io_context, uint8_t record_type, const struct iovec *msg_iov,
+        size_t msg_iovlen, s2n_blocked_status *blocked, size_t *bytes_written)
+{
+    RESULT_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+S2N_RESULT s2n_ktls_recvmsg(void *io_context, uint8_t *record_type, uint8_t *buf,
+        size_t buf_len, s2n_blocked_status *blocked, size_t *bytes_read)
+{
+    RESULT_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+ssize_t s2n_ktls_sendv_with_offset(struct s2n_connection *conn, const struct iovec *bufs,
+        ssize_t count, ssize_t offs, s2n_blocked_status *blocked)
+{
+    POSIX_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+int s2n_ktls_record_writev(struct s2n_connection *conn, uint8_t content_type,
+        const struct iovec *in, int in_count, size_t offs, size_t to_write)
+{
+    POSIX_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+int s2n_ktls_read_full_record(struct s2n_connection *conn, uint8_t *record_type)
+{
+    POSIX_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+S2N_RESULT s2n_ktls_key_update_send(struct s2n_connection *conn, size_t bytes_requested)
+{
+    RESULT_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+S2N_RESULT s2n_ktls_key_update_process(struct s2n_connection *conn)
+{
+    RESULT_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+S2N_RESULT s2n_ktls_set_estimated_sequence_number(struct s2n_connection *conn, size_t bytes_written)
+{
+    RESULT_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+S2N_RESULT s2n_ktls_check_estimated_record_limit(struct s2n_connection *conn, size_t bytes_requested)
+{
+    RESULT_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+int s2n_connection_ktls_enable_send(struct s2n_connection *conn)
+{
+    POSIX_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+int s2n_connection_ktls_enable_recv(struct s2n_connection *conn)
+{
+    POSIX_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+int s2n_config_ktls_enable_unsafe_tls13(struct s2n_config *config)
+{
+    POSIX_BAIL(S2N_ERR_KTLS_UNSUPPORTED_PLATFORM);
+}
+
+#else /* _WIN32 */
+
+    #include "crypto/s2n_ktls_crypto.h"
+    #include "crypto/s2n_sequence.h"
+    #include "tls/s2n_key_update.h"
+    #include "tls/s2n_prf.h"
+    #include "tls/s2n_tls.h"
+    #include "tls/s2n_tls13_handshake.h"
+    #include "tls/s2n_tls13_key_schedule.h"
 
 /* Used for overriding setsockopt calls in testing */
 s2n_setsockopt_fn s2n_setsockopt = setsockopt;
@@ -35,11 +119,11 @@ S2N_RESULT s2n_ktls_set_setsockopt_cb(s2n_setsockopt_fn cb)
 
 bool s2n_ktls_is_supported_on_platform()
 {
-#if defined(S2N_KTLS_SUPPORTED)
+    #if defined(S2N_KTLS_SUPPORTED)
     return true;
-#else
+    #else
     return false;
-#endif
+    #endif
 }
 
 static int s2n_ktls_disabled_read(void *io_context, uint8_t *buf, uint32_t len)
@@ -445,3 +529,5 @@ S2N_RESULT s2n_ktls_key_update_process(struct s2n_connection *conn)
 
     return S2N_RESULT_OK;
 }
+
+#endif /* _WIN32 */
