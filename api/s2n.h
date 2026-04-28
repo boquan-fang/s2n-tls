@@ -37,7 +37,16 @@ extern "C" {
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/types.h>
-#include <sys/uio.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    /* struct iovec equivalent for Windows */
+    struct iovec {
+        void  *iov_base;
+        size_t iov_len;
+    };
+#else
+    #include <sys/uio.h>
+#endif
 
 /**
  *  Function return code
