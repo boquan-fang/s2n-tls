@@ -15,6 +15,21 @@
 
 #pragma once
 
+#ifdef _WIN32
+    /* Prevent Windows wincrypt.h from defining macros that conflict with OpenSSL/AWS-LC */
+    #define WIN32_LEAN_AND_MEAN
+    #define NOCRYPT
+    #define NOMINMAX
+#endif
+
+/* Windows platform doesn't have MIN/MAX. Hence, we redefine it for Windows. */
+#ifndef MIN
+    #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef MAX
+    #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
 /* Let modules know that the prelude was included */
 #define _S2N_PRELUDE_INCLUDED
 
