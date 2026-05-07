@@ -103,6 +103,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
     set(OS_LIBS Threads::Threads kvm)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     set(OS_LIBS Threads::Threads dl)
+elseif(WIN32)
+    # Windows: sockets (ws2_32) are needed for testss2n on Windows.
+    # Note: MSVC skips find_package(Threads) above, and libm/libdl/librt
+    # don't exist on Windows.
+    set(OS_LIBS ws2_32)
 else()
     set(OS_LIBS Threads::Threads dl rt)
 endif()
@@ -477,7 +482,10 @@ else()
     target_link_libraries(${PROJECT_NAME} PUBLIC ${LINK_LIB})
 endif()
 
-target_link_libraries(${PROJECT_NAME} PUBLIC ${OS_LIBS} m)
+target_link_libraries(${PROJECT_NAME} PUBLIC ${OS_LIBS})
+if (NOT WIN32)
+    target_link_libraries(${PROJECT_NAME} PUBLIC m)
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/api> $<INSTALL_INTERFACE:include>)
@@ -577,6 +585,13 @@ if (BUILD_TESTING)
     ############################################################################
 
     file(GLOB UNITTESTS_SRC "tests/unit/*.c")
+    if (WIN32)
+        # On Windows, only a small list of unit tests compiles today.
+        # Add more here as they become buildable.
+        set(UNITTESTS_SRC
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/s2n_safety_test.c"
+        )
+    endif()
     foreach(test_case ${UNITTESTS_SRC})
         # NAME_WE: name without extension
         get_filename_component(test_case_name ${test_case} NAME_WE)
@@ -591,16 +606,24 @@ if (BUILD_TESTING)
                   find . -name '${test_case_name}.c.o' -exec objcopy --redefine-syms libcrypto.symbols {} \\\;
             )
         endif()
-        target_compile_options(${test_case_name} PRIVATE 
-            -Wall -Wimplicit -Wunused -Wcomment -Wchar-subscripts -Wuninitialized 
-            -Wshadow  -Wcast-align -Wwrite-strings -Wformat-security
-            -Wno-deprecated-declarations -Wno-unknown-pragmas -Wno-deprecated -std=gnu99 -Wno-missing-braces
-        )
-        if (UNSAFE_TREAT_WARNINGS_AS_ERRORS)
-            target_compile_options(${test_case_name} PRIVATE -Werror)
-        endif()
-        if (S2N_LTO)
-            target_compile_options(${test_case_name} PRIVATE -flto)
+        if (MSVC)
+            # MSVC doesn't understand GCC-style warning flags.
+            target_compile_options(${test_case_name} PRIVATE /W3 /wd4996)
+            if (UNSAFE_TREAT_WARNINGS_AS_ERRORS)
+                target_compile_options(${test_case_name} PRIVATE /WX)
+            endif()
+        else()
+            target_compile_options(${test_case_name} PRIVATE
+                -Wall -Wimplicit -Wunused -Wcomment -Wchar-subscripts -Wuninitialized
+                -Wshadow  -Wcast-align -Wwrite-strings -Wformat-security
+                -Wno-deprecated-declarations -Wno-unknown-pragmas -Wno-deprecated -std=gnu99 -Wno-missing-braces
+            )
+            if (UNSAFE_TREAT_WARNINGS_AS_ERRORS)
+                target_compile_options(${test_case_name} PRIVATE -Werror)
+            endif()
+            if (S2N_LTO)
+                target_compile_options(${test_case_name} PRIVATE -flto)
+            endif()
         endif()
 
         add_test(

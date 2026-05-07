@@ -24,6 +24,11 @@
     #include <process.h>
     #define setenv(name, value, overwrite) _putenv_s(name, value)
     #define unsetenv(name) _putenv_s(name, "")
+    #ifdef _MSC_VER
+        /* MSVC prefixes these POSIX calls with underscores. */
+        #define isatty _isatty
+        #define fileno _fileno
+    #endif
 #else
     #include <unistd.h>
 #endif

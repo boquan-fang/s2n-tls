@@ -13,10 +13,12 @@
  * permissions and limitations under the License.
  */
 
-#include <dirent.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/types.h>
+#ifndef _WIN32
+    #include <dirent.h>
+#endif
 
 #include "crypto/s2n_libcrypto.h"
 #include "crypto/s2n_mldsa.h"
@@ -166,6 +168,13 @@ S2N_RESULT s2n_test_cert_chains_init(struct s2n_test_cert_chain_list *chains)
 {
     /* Load all permutations */
     {
+#ifdef _WIN32
+        /* Windows has no <dirent.h>/opendir. This testlib function is not
+         * used by the Windows test targets we currently support. Return an
+         * error if it's called so misuse surfaces immediately.
+         */
+        RESULT_BAIL(S2N_ERR_UNIMPLEMENTED);
+#else
         DIR *root = opendir("../pems/permutations");
         RESULT_ENSURE_REF(root);
         struct dirent *dir = NULL;
@@ -193,6 +202,7 @@ S2N_RESULT s2n_test_cert_chains_init(struct s2n_test_cert_chain_list *chains)
             chains->count++;
         }
         closedir(root);
+#endif
     }
 
     /* Load all MLDSA test certs.
