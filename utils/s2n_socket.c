@@ -195,6 +195,14 @@ int s2n_socket_read(void *io_context, uint8_t *buf, uint32_t len)
      * returned and errno is set appropriately. */
 #ifdef _WIN32
     ssize_t result = recv(rfd, (char *) buf, len, 0);
+    if (result < 0) {
+        int wsa_err = WSAGetLastError();
+        if (wsa_err == WSAEWOULDBLOCK) {
+            errno = EAGAIN;
+        } else {
+            errno = EIO;
+        }
+    }
 #else
     ssize_t result = read(rfd, buf, len);
 #endif
@@ -216,6 +224,14 @@ int s2n_socket_write(void *io_context, const uint8_t *buf, uint32_t len)
      * returned and errno is set appropriately. */
 #ifdef _WIN32
     ssize_t result = send(wfd, (const char *) buf, len, 0);
+    if (result < 0) {
+        int wsa_err = WSAGetLastError();
+        if (wsa_err == WSAEWOULDBLOCK) {
+            errno = EAGAIN;
+        } else {
+            errno = EIO;
+        }
+    }
 #else
     ssize_t result = write(wfd, buf, len);
 #endif
