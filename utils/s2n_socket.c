@@ -68,7 +68,7 @@ int s2n_socket_quickack(struct s2n_connection *conn)
 
 int s2n_socket_write_snapshot(struct s2n_connection *conn)
 {
-#ifdef S2N_CORK
+#if defined(S2N_CORK) && !defined(_WIN32)
     socklen_t corklen = sizeof(int);
     POSIX_ENSURE_REF(conn);
     struct s2n_socket_write_io_context *w_io_ctx = (struct s2n_socket_write_io_context *) conn->send_io_context;
@@ -84,7 +84,7 @@ int s2n_socket_write_snapshot(struct s2n_connection *conn)
 
 int s2n_socket_read_snapshot(struct s2n_connection *conn)
 {
-#ifdef SO_RCVLOWAT
+#if defined(SO_RCVLOWAT) && !defined(_WIN32)
     socklen_t watlen = sizeof(int);
     POSIX_ENSURE_REF(conn);
     struct s2n_socket_read_io_context *r_io_ctx = (struct s2n_socket_read_io_context *) conn->recv_io_context;
@@ -100,7 +100,7 @@ int s2n_socket_read_snapshot(struct s2n_connection *conn)
 
 int s2n_socket_write_restore(struct s2n_connection *conn)
 {
-#ifdef S2N_CORK
+#if defined(S2N_CORK) && !defined(_WIN32)
     POSIX_ENSURE_REF(conn);
     struct s2n_socket_write_io_context *w_io_ctx = (struct s2n_socket_write_io_context *) conn->send_io_context;
     POSIX_ENSURE_REF(w_io_ctx);
@@ -117,7 +117,7 @@ int s2n_socket_write_restore(struct s2n_connection *conn)
 
 int s2n_socket_read_restore(struct s2n_connection *conn)
 {
-#ifdef SO_RCVLOWAT
+#if defined(SO_RCVLOWAT) && !defined(_WIN32)
     POSIX_ENSURE_REF(conn);
     struct s2n_socket_read_io_context *r_io_ctx = (struct s2n_socket_read_io_context *) conn->recv_io_context;
     POSIX_ENSURE_REF(r_io_ctx);
@@ -148,7 +148,7 @@ int s2n_socket_was_corked(struct s2n_connection *conn)
 
 int s2n_socket_write_cork(struct s2n_connection *conn)
 {
-#ifdef S2N_CORK
+#if defined(S2N_CORK) && !defined(_WIN32)
     POSIX_ENSURE_REF(conn);
     int optval = S2N_CORK_ON;
 
@@ -164,7 +164,7 @@ int s2n_socket_write_cork(struct s2n_connection *conn)
 
 int s2n_socket_write_uncork(struct s2n_connection *conn)
 {
-#ifdef S2N_CORK
+#if defined(S2N_CORK) && !defined(_WIN32)
     POSIX_ENSURE_REF(conn);
     int optval = S2N_CORK_OFF;
 

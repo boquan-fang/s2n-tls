@@ -590,6 +590,7 @@ if (BUILD_TESTING)
         # Add more here as they become buildable.
         set(UNITTESTS_SRC
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/s2n_safety_test.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/s2n_extended_master_secret_test.c"
         )
     endif()
     foreach(test_case ${UNITTESTS_SRC})

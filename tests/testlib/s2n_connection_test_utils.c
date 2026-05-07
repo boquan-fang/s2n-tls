@@ -157,6 +157,12 @@ int s2n_io_pair_init(struct s2n_test_io_pair *io_pair)
 #endif
 
 #ifdef _WIN32
+    /* Winsock requires initialization before any socket call. Calling
+     * WSAStartup multiple times is safe (reference-counted). */
+    WSADATA wsa_data = { 0 };
+    int wsa_rc = WSAStartup(MAKEWORD(2, 2), &wsa_data);
+    POSIX_ENSURE(wsa_rc == 0, S2N_ERR_IO);
+
     /* Windows doesn't have socketpair. Emulate with TCP loopback. */
     int listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     POSIX_ENSURE(listener >= 0, S2N_ERR_IO);
