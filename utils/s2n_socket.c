@@ -13,17 +13,20 @@
  * permissions and limitations under the License.
  */
 
+#ifdef _WIN32
+/* On Windows, s2n does not provide built-in socket I/O. Users must use custom
+ * I/O callbacks (s2n_connection_set_recv_cb / s2n_connection_set_send_cb).
+ * This file compiles to nothing on Windows.
+ */
+typedef int s2n_socket_unused;
+#else /* !_WIN32 */
+
 #include "utils/s2n_socket.h"
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#endif
 
 #include "tls/s2n_connection.h"
 #include "utils/s2n_safety.h"
@@ -68,7 +71,7 @@ int s2n_socket_quickack(struct s2n_connection *conn)
 
 int s2n_socket_write_snapshot(struct s2n_connection *conn)
 {
-#if defined(S2N_CORK) && !defined(_WIN32)
+#if defined(S2N_CORK)
     socklen_t corklen = sizeof(int);
     POSIX_ENSURE_REF(conn);
     struct s2n_socket_write_io_context *w_io_ctx = (struct s2n_socket_write_io_context *) conn->send_io_context;
@@ -84,7 +87,7 @@ int s2n_socket_write_snapshot(struct s2n_connection *conn)
 
 int s2n_socket_read_snapshot(struct s2n_connection *conn)
 {
-#if defined(SO_RCVLOWAT) && !defined(_WIN32)
+#if defined(SO_RCVLOWAT)
     socklen_t watlen = sizeof(int);
     POSIX_ENSURE_REF(conn);
     struct s2n_socket_read_io_context *r_io_ctx = (struct s2n_socket_read_io_context *) conn->recv_io_context;
@@ -100,7 +103,7 @@ int s2n_socket_read_snapshot(struct s2n_connection *conn)
 
 int s2n_socket_write_restore(struct s2n_connection *conn)
 {
-#if defined(S2N_CORK) && !defined(_WIN32)
+#if defined(S2N_CORK)
     POSIX_ENSURE_REF(conn);
     struct s2n_socket_write_io_context *w_io_ctx = (struct s2n_socket_write_io_context *) conn->send_io_context;
     POSIX_ENSURE_REF(w_io_ctx);
@@ -117,7 +120,7 @@ int s2n_socket_write_restore(struct s2n_connection *conn)
 
 int s2n_socket_read_restore(struct s2n_connection *conn)
 {
-#if defined(SO_RCVLOWAT) && !defined(_WIN32)
+#if defined(SO_RCVLOWAT)
     POSIX_ENSURE_REF(conn);
     struct s2n_socket_read_io_context *r_io_ctx = (struct s2n_socket_read_io_context *) conn->recv_io_context;
     POSIX_ENSURE_REF(r_io_ctx);
@@ -148,7 +151,7 @@ int s2n_socket_was_corked(struct s2n_connection *conn)
 
 int s2n_socket_write_cork(struct s2n_connection *conn)
 {
-#if defined(S2N_CORK) && !defined(_WIN32)
+#if defined(S2N_CORK)
     POSIX_ENSURE_REF(conn);
     int optval = S2N_CORK_ON;
 
@@ -164,7 +167,7 @@ int s2n_socket_write_cork(struct s2n_connection *conn)
 
 int s2n_socket_write_uncork(struct s2n_connection *conn)
 {
-#if defined(S2N_CORK) && !defined(_WIN32)
+#if defined(S2N_CORK)
     POSIX_ENSURE_REF(conn);
     int optval = S2N_CORK_OFF;
 
@@ -193,19 +196,7 @@ int s2n_socket_read(void *io_context, uint8_t *buf, uint32_t len)
 
     /* On success, the number of bytes read is returned. On failure, -1 is
      * returned and errno is set appropriately. */
-#ifdef _WIN32
-    ssize_t result = recv(rfd, (char *) buf, len, 0);
-    if (result < 0) {
-        int wsa_err = WSAGetLastError();
-        if (wsa_err == WSAEWOULDBLOCK) {
-            errno = EAGAIN;
-        } else {
-            errno = EIO;
-        }
-    }
-#else
     ssize_t result = read(rfd, buf, len);
-#endif
     POSIX_ENSURE_INCLUSIVE_RANGE(INT_MIN, result, INT_MAX);
     return result;
 }
@@ -222,19 +213,7 @@ int s2n_socket_write(void *io_context, const uint8_t *buf, uint32_t len)
 
     /* On success, the number of bytes written is returned. On failure, -1 is
      * returned and errno is set appropriately. */
-#ifdef _WIN32
-    ssize_t result = send(wfd, (const char *) buf, len, 0);
-    if (result < 0) {
-        int wsa_err = WSAGetLastError();
-        if (wsa_err == WSAEWOULDBLOCK) {
-            errno = EAGAIN;
-        } else {
-            errno = EIO;
-        }
-    }
-#else
     ssize_t result = write(wfd, buf, len);
-#endif
     POSIX_ENSURE_INCLUSIVE_RANGE(INT_MIN, result, INT_MAX);
     return result;
 }
@@ -255,3 +234,5 @@ int s2n_socket_is_ipv6(int fd, uint8_t *ipv6)
 
     return 0;
 }
+
+#endif /* !_WIN32 */

@@ -15,6 +15,11 @@
 
 #pragma once
 
+/* On Windows, s2n does not provide built-in socket I/O management.
+ * Users must use custom I/O callbacks instead. This header is empty on Windows.
+ */
+#ifndef _WIN32
+
 #include "tls/s2n_connection.h"
 
 /* The default read I/O context for communication over a socket */
@@ -50,3 +55,5 @@ int s2n_socket_write_uncork(struct s2n_connection *conn);
 int s2n_socket_read(void *io_context, uint8_t *buf, uint32_t len);
 int s2n_socket_write(void *io_context, const uint8_t *buf, uint32_t len);
 int s2n_socket_is_ipv6(int fd, uint8_t *ipv6);
+
+#endif /* !_WIN32 */

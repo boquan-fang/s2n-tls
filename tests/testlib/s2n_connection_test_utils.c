@@ -26,8 +26,11 @@
 
 #include "testlib/s2n_testlib.h"
 #include "tls/s2n_connection.h"
+#include "utils/s2n_mem.h"
 #include "utils/s2n_safety.h"
-#include "utils/s2n_socket.h"
+#ifndef _WIN32
+    #include "utils/s2n_socket.h"
+#endif
 
 int s2n_fd_set_blocking(int fd)
 {
@@ -207,13 +210,76 @@ int s2n_io_pair_init_non_blocking(struct s2n_test_io_pair *io_pair)
     return 0;
 }
 
+#ifdef _WIN32
+/* On Windows, the s2n library does not provide built-in socket I/O (set_fd).
+ * Tests use these custom I/O callbacks that wrap Winsock recv/send.
+ */
+struct s2n_test_fd_io_context {
+    int fd;
+};
+
+static int s2n_test_recv_cb(void *io_context, uint8_t *buf, uint32_t len)
+{
+    struct s2n_test_fd_io_context *ctx = (struct s2n_test_fd_io_context *) io_context;
+    POSIX_ENSURE_REF(ctx);
+
+    ssize_t result = recv(ctx->fd, (char *) buf, len, 0);
+    if (result < 0) {
+        int wsa_err = WSAGetLastError();
+        if (wsa_err == WSAEWOULDBLOCK) {
+            errno = EAGAIN;
+        } else {
+            errno = EIO;
+        }
+    }
+    return (int) result;
+}
+
+static int s2n_test_send_cb(void *io_context, const uint8_t *buf, uint32_t len)
+{
+    struct s2n_test_fd_io_context *ctx = (struct s2n_test_fd_io_context *) io_context;
+    POSIX_ENSURE_REF(ctx);
+
+    ssize_t result = send(ctx->fd, (const char *) buf, len, 0);
+    if (result < 0) {
+        int wsa_err = WSAGetLastError();
+        if (wsa_err == WSAEWOULDBLOCK) {
+            errno = EAGAIN;
+        } else {
+            errno = EIO;
+        }
+    }
+    return (int) result;
+}
+#endif /* _WIN32 */
+
 int s2n_connection_set_io_pair(struct s2n_connection *conn, struct s2n_test_io_pair *io_pair)
 {
+    int fd;
     if (conn->mode == S2N_CLIENT) {
-        POSIX_GUARD(s2n_connection_set_fd(conn, io_pair->client));
+        fd = io_pair->client;
     } else if (conn->mode == S2N_SERVER) {
-        POSIX_GUARD(s2n_connection_set_fd(conn, io_pair->server));
+        fd = io_pair->server;
+    } else {
+        POSIX_BAIL(S2N_ERR_INVALID_STATE);
     }
+
+#ifdef _WIN32
+    /* On Windows, use custom I/O callbacks wrapping the socket fd.
+     * We allocate a context struct that the callbacks use to access the fd.
+     */
+    struct s2n_blob ctx_mem = { 0 };
+    POSIX_GUARD(s2n_alloc(&ctx_mem, sizeof(struct s2n_test_fd_io_context)));
+    struct s2n_test_fd_io_context *ctx = (struct s2n_test_fd_io_context *) (void *) ctx_mem.data;
+    ctx->fd = fd;
+
+    POSIX_GUARD(s2n_connection_set_recv_cb(conn, s2n_test_recv_cb));
+    POSIX_GUARD(s2n_connection_set_send_cb(conn, s2n_test_send_cb));
+    POSIX_GUARD(s2n_connection_set_recv_ctx(conn, ctx));
+    POSIX_GUARD(s2n_connection_set_send_ctx(conn, ctx));
+#else
+    POSIX_GUARD(s2n_connection_set_fd(conn, fd));
+#endif
 
     return 0;
 }

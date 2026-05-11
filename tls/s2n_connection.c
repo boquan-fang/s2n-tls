@@ -19,10 +19,14 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
-#include <sys/param.h>
+#ifndef _WIN32
+    #include <strings.h>
+    #include <sys/param.h>
+#endif
 #include <time.h>
-#include <unistd.h>
+#ifndef _WIN32
+    #include <unistd.h>
+#endif
 
 #include "api/s2n.h"
 /* Required for s2n_connection_get_key_update_counts */
@@ -54,7 +58,9 @@
 #include "utils/s2n_mem.h"
 #include "utils/s2n_random.h"
 #include "utils/s2n_safety.h"
-#include "utils/s2n_socket.h"
+#ifndef _WIN32
+    #include "utils/s2n_socket.h"
+#endif
 #include "utils/s2n_timer.h"
 
 #define S2N_SET_KEY_SHARE_LIST_EMPTY(keyshares) (keyshares |= 1)
@@ -170,11 +176,13 @@ static int s2n_connection_free_managed_recv_io(struct s2n_connection *conn)
 {
     POSIX_ENSURE_REF(conn);
 
+#ifndef _WIN32
     if (conn->managed_recv_io) {
         POSIX_GUARD(s2n_free_object((uint8_t **) &conn->recv_io_context, sizeof(struct s2n_socket_read_io_context)));
         conn->managed_recv_io = false;
         conn->recv = NULL;
     }
+#endif
     return S2N_SUCCESS;
 }
 
@@ -182,11 +190,13 @@ static int s2n_connection_free_managed_send_io(struct s2n_connection *conn)
 {
     POSIX_ENSURE_REF(conn);
 
+#ifndef _WIN32
     if (conn->managed_send_io) {
         POSIX_GUARD(s2n_free_object((uint8_t **) &conn->send_io_context, sizeof(struct s2n_socket_write_io_context)));
         conn->managed_send_io = false;
         conn->send = NULL;
     }
+#endif
     return S2N_SUCCESS;
 }
 
@@ -199,12 +209,14 @@ static int s2n_connection_free_managed_io(struct s2n_connection *conn)
 
 static int s2n_connection_wipe_io(struct s2n_connection *conn)
 {
+#ifndef _WIN32
     if (s2n_connection_is_managed_corked(conn) && conn->recv) {
         POSIX_GUARD(s2n_socket_read_restore(conn));
     }
     if (s2n_connection_is_managed_corked(conn) && conn->send) {
         POSIX_GUARD(s2n_socket_write_restore(conn));
     }
+#endif
 
     /* Remove all I/O-related members */
     POSIX_GUARD(s2n_connection_free_managed_io(conn));
@@ -834,6 +846,7 @@ int s2n_connection_set_client_auth_type(struct s2n_connection *conn, s2n_cert_au
     return 0;
 }
 
+#ifndef _WIN32
 int s2n_connection_set_read_fd(struct s2n_connection *conn, int rfd)
 {
     struct s2n_blob ctx_mem = { 0 };
@@ -926,6 +939,7 @@ int s2n_connection_use_corked_io(struct s2n_connection *conn)
 
     return 0;
 }
+#endif /* !_WIN32 */
 
 uint64_t s2n_connection_get_wire_bytes_in(struct s2n_connection *conn)
 {

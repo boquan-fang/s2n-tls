@@ -104,10 +104,10 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     set(OS_LIBS Threads::Threads dl)
 elseif(WIN32)
-    # Windows: sockets (ws2_32) are needed for testss2n on Windows.
-    # Note: MSVC skips find_package(Threads) above, and libm/libdl/librt
-    # don't exist on Windows.
-    set(OS_LIBS ws2_32)
+    # Windows: the core library no longer uses sockets directly (custom I/O
+    # callbacks only). ws2_32 is still needed by the test library (testss2n)
+    # which emulates socketpair for self-talk tests.
+    set(OS_LIBS "")
 else()
     set(OS_LIBS Threads::Threads dl rt)
 endif()
@@ -506,6 +506,10 @@ if (BUILD_TESTING)
     # make sure all linked tests include the prelude
     target_compile_options(testss2n PUBLIC -include "${S2N_PRELUDE}" -fPIC)
     target_link_libraries(testss2n PUBLIC ${PROJECT_NAME})
+    if (WIN32)
+        # Test utilities use sockets for self-talk tests (emulated socketpair)
+        target_link_libraries(testss2n PUBLIC ws2_32)
+    endif()
     if (SECCOMP)
         message(STATUS "Linking tests with seccomp")
         target_link_libraries(testss2n PRIVATE seccomp)
@@ -591,6 +595,8 @@ if (BUILD_TESTING)
         set(UNITTESTS_SRC
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/s2n_safety_test.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/s2n_extended_master_secret_test.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/s2n_self_talk_psk_test.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/s2n_self_talk_shutdown_test.c"
         )
     endif()
     foreach(test_case ${UNITTESTS_SRC})

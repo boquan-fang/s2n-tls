@@ -1756,6 +1756,7 @@ S2N_API extern int s2n_client_hello_get_server_name_length(struct s2n_client_hel
  */
 S2N_API extern int s2n_client_hello_get_server_name(struct s2n_client_hello *ch, uint8_t *server_name, uint16_t length, uint16_t *out_length);
 
+#ifndef _WIN32
 /**
  * Sets the file descriptor for a s2n connection.
  *
@@ -1819,6 +1820,7 @@ S2N_API extern int s2n_connection_get_write_fd(struct s2n_connection *conn, int 
  * @returns S2N_SUCCESS on success. S2N_FAILURE on failure
  */
 S2N_API extern int s2n_connection_use_corked_io(struct s2n_connection *conn);
+#endif /* !_WIN32 */
 
 /**
  * Function pointer for a user provided recv callback.
