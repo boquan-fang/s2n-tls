@@ -1,0 +1,62 @@
+---
+name: Windows (MSYS2)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-msys2:
+    runs-on: windows-latest
+    name: CI Windows (MSYS2 UCRT64)
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-clang
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-go
+            mingw-w64-ucrt-x86_64-nasm
+            make
+            git
+            diffutils
+
+      - name: Build AWS-LC
+        shell: msys2 {0}
+        run: |
+          set -eu
+          git clone --depth 1 https://github.com/aws/aws-lc.git aws-lc-src
+          cmake -B aws-lc-build aws-lc-src -GNinja \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_INSTALL_PREFIX=/ucrt64/local \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_TESTING=OFF
+          cmake --build aws-lc-build -j $(nproc) --target install
+
+      - name: Build s2n-tls
+        shell: msys2 {0}
+        run: |
+          set -eu
+          cmake -B build . \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_PREFIX_PATH=/ucrt64/local \
+            -DBUILD_TESTING=OFF
+          cmake --build ./build -j $(nproc)
