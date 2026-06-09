@@ -16,10 +16,11 @@
 #include "tls/s2n_shutdown.c"
 
 #include "s2n_test.h"
-#include "testlib/s2n_ktls_test_utils.h"
+#ifndef _WIN32
+    #include "testlib/s2n_ktls_test_utils.h"
+#endif
 #include "testlib/s2n_testlib.h"
 #include "tls/s2n_alerts.h"
-#include "utils/s2n_socket.h"
 
 #define ALERT_LEN (sizeof(uint16_t))
 
@@ -833,9 +834,11 @@ int main(int argc, char **argv)
             EXPECT_TRUE(s2n_connection_check_io_status(conn, S2N_IO_CLOSED));
             EXPECT_FALSE(s2n_atomic_flag_test(&conn->close_notify_received));
         };
+    };
 
-        /* Test: kTLS enabled */
-        {
+#ifndef _WIN32
+    /* Test: s2n_shutdown_send with kTLS enabled */
+    {
             /* Test: Successfully send alert */
             {
                 DEFER_CLEANUP(struct s2n_connection *conn = s2n_connection_new(S2N_SERVER),
@@ -918,7 +921,6 @@ int main(int argc, char **argv)
                     EXPECT_EQUAL(out.sendmsg_invoked_count, expected_calls);
                 }
             };
-        };
     };
 
     /* Test: ktls enabled */
@@ -1055,6 +1057,7 @@ int main(int argc, char **argv)
             EXPECT_OK(s2n_test_records_in_ancillary(&io_pair.server_in, 0));
         };
     };
+#endif /* _WIN32 */
 
     END_TEST();
 }
