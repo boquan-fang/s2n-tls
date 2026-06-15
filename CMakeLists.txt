@@ -479,7 +479,11 @@ else()
     target_link_libraries(${PROJECT_NAME} PUBLIC ${LINK_LIB})
 endif()
 
-target_link_libraries(${PROJECT_NAME} PUBLIC ${OS_LIBS} m)
+target_link_libraries(${PROJECT_NAME} PUBLIC ${OS_LIBS})
+if (NOT WIN32)
+    # On Windows, math functions are part of the C runtime; no separate libm exists.
+    target_link_libraries(${PROJECT_NAME} PUBLIC m)
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/api> $<INSTALL_INTERFACE:include>)
@@ -579,6 +583,127 @@ if (BUILD_TESTING)
     ############################################################################
 
     file(GLOB UNITTESTS_SRC "tests/unit/*.c")
+    if (WIN32)
+        set(S2N_WINDOWS_EXCLUDE_TESTS
+            # Tests that use socket-based IO (s2n_io_pair / socketpair)
+            s2n_alerts_protocol_test
+            s2n_async_offload_cb_test
+            s2n_async_pkey_test
+            s2n_cbc_test
+            s2n_cert_authorities_test
+            s2n_cert_chain_and_key_test
+            s2n_certificate_test
+            s2n_cert_status_extension_test
+            s2n_cert_validation_callback_test
+            s2n_client_auth_handshake_test
+            s2n_client_cert_verify_test
+            s2n_client_extensions_test
+            s2n_client_hello_get_supported_groups_test
+            s2n_client_hello_request_test
+            s2n_client_hello_retry_test
+            s2n_client_hello_test
+            s2n_client_key_exchange_test
+            s2n_client_psk_extension_test
+            s2n_client_record_version_test
+            s2n_client_secure_renegotiation_test
+            s2n_client_supported_versions_extension_test
+            s2n_config_test
+            s2n_connection_protocol_versions_test
+            s2n_connection_test
+            s2n_cookie_test
+            s2n_crl_test
+            s2n_crypto_test
+            s2n_early_data_io_api_test
+            s2n_early_data_io_test
+            s2n_extended_master_secret_test
+            s2n_extension_type_test
+            s2n_handshake_partial_test
+            s2n_ktls_mode_test
+            s2n_multi_message_test
+            s2n_mutual_auth_test
+            s2n_optional_client_auth_test
+            s2n_policy_writer_test
+            s2n_pq_mlkem_policies_test
+            s2n_recv_test
+            s2n_renegotiate_io_test
+            s2n_renegotiate_test
+            s2n_security_policies_test
+            s2n_self_talk_certificates_test
+            s2n_self_talk_io_mem_test
+            s2n_self_talk_key_log_test
+            s2n_self_talk_npn_test
+            s2n_self_talk_offload_signing_test
+            s2n_self_talk_psk_test
+            s2n_self_talk_quic_support_test
+            s2n_self_talk_session_resumption_test
+            s2n_self_talk_shutdown_test
+            s2n_send_key_update_test
+            s2n_server_hello_retry_test
+            s2n_server_renegotiation_info_test
+            s2n_session_ticket_test
+            s2n_shutdown_test
+            s2n_signature_algorithms_test
+            s2n_sslv3_test
+            s2n_testlib_test
+            s2n_tls13_cert_verify_test
+            s2n_x509_get_validated_cert_chain_test
+            s2n_x509_intent_verification_test
+            s2n_x509_validator_custom_oids_test
+            s2n_x509_validator_time_verification_test
+
+            # Tests that use POSIX-only headers or APIs (sys/wait.h, struct iovec, arpa/inet.h, etc.)
+            s2n_cleanup_test
+            s2n_client_hello_recv_test
+            s2n_key_update_test
+            s2n_post_handshake_recv_test
+            s2n_quic_support_test
+            s2n_recv_buffering_test
+            s2n_rfc5952_test
+            s2n_tls13_zero_length_payload_test
+
+            # Tests that depend on POSIX socket close behavior
+            s2n_drain_alert_test
+
+            # Tests that require kTLS
+            s2n_ktls_io_sendfile_test
+            s2n_ktls_io_test
+            s2n_ktls_test
+            s2n_ktls_test_utils_test
+            s2n_self_talk_ktls_test
+
+            # Tests that require seccomp (Linux only)
+            s2n_seccomp_failure_test
+
+            # Tests that measure memory via /proc/self/statm and getrlimit()
+            s2n_mem_usage_test
+
+            # Tests that use fork()
+            s2n_examples_test
+            s2n_fragmentation_coalescing_test
+            s2n_handshake_test
+            s2n_init_test
+            s2n_io_test
+            s2n_key_update_threads_test
+            s2n_malformed_handshake_test
+            s2n_mem_allocator_test
+            s2n_random_test
+            s2n_release_non_empty_buffers_test
+            s2n_self_talk_alerts_test
+            s2n_self_talk_broken_pipe_test
+            s2n_self_talk_client_hello_cb_test
+            s2n_self_talk_custom_io_test
+            s2n_self_talk_min_protocol_version_test
+            s2n_self_talk_nonblocking_test
+            s2n_self_talk_session_id_test
+            s2n_self_talk_tls12_test
+            s2n_self_talk_tls13_test
+        )
+        foreach(excluded ${S2N_WINDOWS_EXCLUDE_TESTS})
+            list(REMOVE_ITEM UNITTESTS_SRC
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/${excluded}.c")
+        endforeach()
+    endif()
+
     foreach(test_case ${UNITTESTS_SRC})
         # NAME_WE: name without extension
         get_filename_component(test_case_name ${test_case} NAME_WE)
@@ -619,21 +744,24 @@ if (BUILD_TESTING)
     ######################### build utility binaries ###########################
     ############################################################################
 
-    add_executable(s2nc "bin/s2nc.c" "bin/echo.c" "bin/https.c" "bin/common.c")
-    target_link_libraries(s2nc ${PROJECT_NAME})
-    target_compile_options(s2nc PRIVATE -std=gnu99)
+    # s2nc/s2nd can't be built on Windows yet
+    if (NOT WIN32)
+        add_executable(s2nc "bin/s2nc.c" "bin/echo.c" "bin/https.c" "bin/common.c")
+        target_link_libraries(s2nc ${PROJECT_NAME})
+        target_compile_options(s2nc PRIVATE -std=gnu99)
 
-    add_executable(s2nd "bin/s2nd.c" "bin/echo.c" "bin/https.c" "bin/common.c")
-    target_link_libraries(s2nd ${PROJECT_NAME})
-    target_compile_options(s2nd PRIVATE -std=gnu99)
+        add_executable(s2nd "bin/s2nd.c" "bin/echo.c" "bin/https.c" "bin/common.c")
+        target_link_libraries(s2nd ${PROJECT_NAME})
+        target_compile_options(s2nd PRIVATE -std=gnu99)
 
-    add_executable(policy "bin/policy.c")
-    target_link_libraries(policy ${PROJECT_NAME})
-    target_compile_options(policy PRIVATE -std=gnu99)
+        add_executable(policy "bin/policy.c")
+        target_link_libraries(policy ${PROJECT_NAME})
+        target_compile_options(policy PRIVATE -std=gnu99)
 
-    if(S2N_LTO)
-        target_compile_options(s2nc PRIVATE -flto)
-        target_compile_options(s2nd PRIVATE -flto)
+        if(S2N_LTO)
+            target_compile_options(s2nc PRIVATE -flto)
+            target_compile_options(s2nd PRIVATE -flto)
+        endif()
     endif()
 
     if (S2N_INTEG_TESTS)
