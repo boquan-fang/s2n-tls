@@ -623,7 +623,6 @@ if (BUILD_TESTING)
             s2n_self_talk_broken_pipe_test
             s2n_self_talk_client_hello_cb_test
             s2n_self_talk_custom_io_test
-            s2n_self_talk_min_protocol_version_test
             s2n_self_talk_nonblocking_test
             s2n_self_talk_session_id_test
         )
