@@ -130,9 +130,15 @@ int main(int argc, char **argv)
                 EXPECT_EQUAL(recv_buffer[j], 33);
             }
 
-            /* Release the buffers here to validate we can continue IO after */
-            EXPECT_SUCCESS(s2n_connection_release_buffers(server_conn));
+            /* Reset the IO stuffer cursors after all data is consumed,
+             * preventing unbounded growth that causes expensive reallocs.
+             */
+            EXPECT_EQUAL(s2n_stuffer_data_available(&io_pair.server_in), 0);
+            EXPECT_SUCCESS(s2n_stuffer_rewrite(&io_pair.server_in));
         }
+
+        /* Release the buffers to validate we can continue IO after */
+        EXPECT_SUCCESS(s2n_connection_release_buffers(server_conn));
 
         /* Fill the buffer for the final send */
         for (int j = 0; j < i; j++) {
