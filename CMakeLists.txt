@@ -626,7 +626,6 @@ if (BUILD_TESTING)
             s2n_self_talk_min_protocol_version_test
             s2n_self_talk_nonblocking_test
             s2n_self_talk_session_id_test
-            s2n_self_talk_tls13_test
         )
         foreach(excluded ${S2N_WINDOWS_EXCLUDE_TESTS})
             list(REMOVE_ITEM UNITTESTS_SRC
