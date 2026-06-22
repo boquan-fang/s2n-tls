@@ -55,9 +55,12 @@ cargo publish --dry-run --allow-dirty
 cargo publish --dry-run --allow-dirty --all-features
 popd
 
-pushd ../standard/integration
-rustc --version || rustup toolchain install
-cargo run
-popd
+# Skip integration tests on Windows: BoringSSL cannot be built with MinGW/MSYS2.
+if [[ "$(uname -s)" != MINGW* && "$(uname -s)" != MSYS* && "$(uname -s)" != CYGWIN* ]]; then
+    pushd ../standard/integration
+    rustc --version || rustup toolchain install
+    cargo run
+    popd
+fi
 
 popd
