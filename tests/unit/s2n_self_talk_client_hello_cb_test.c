@@ -13,16 +13,12 @@
  * permissions and limitations under the License.
  */
 
-#include <fcntl.h>
 #include <stdint.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 #include "api/s2n.h"
 #include "s2n_test.h"
 #include "testlib/s2n_testlib.h"
 #include "tls/s2n_connection.h"
-#include "tls/s2n_internal.h"
 
 struct client_hello_context {
     int invoked;
@@ -38,72 +34,6 @@ struct client_hello_context {
      */
     int legacy_rc_for_server_name_used;
 };
-
-int mock_client(struct s2n_test_io_pair *io_pair, int expect_failure, int expect_server_name_used)
-{
-    struct s2n_connection *conn = NULL;
-    struct s2n_config *config = NULL;
-    s2n_blocked_status blocked;
-    int result = 0;
-    int rc = 0;
-    const char *protocols[] = { "h2", "http/1.1" };
-
-    /* Give the server a chance to listen */
-    sleep(1);
-
-    conn = s2n_connection_new(S2N_CLIENT);
-    config = s2n_config_new();
-    EXPECT_OK(s2n_connection_set_tls12_security_policy(conn));
-    s2n_config_set_protocol_preferences(config, protocols, 2);
-    s2n_config_disable_x509_verification(config);
-    s2n_connection_set_config(conn, config);
-
-    s2n_connection_set_io_pair(conn, io_pair);
-
-    s2n_set_server_name(conn, "example.com");
-
-    rc = s2n_negotiate(conn, &blocked);
-    if (expect_failure) {
-        if (!rc) {
-            result = 1;
-        }
-
-        if (s2n_connection_get_alert(conn) != 40) {
-            result = 2;
-        }
-    } else {
-        char buffer[0xffff];
-
-        if (conn->server_name_used != expect_server_name_used) {
-            result = 1;
-        }
-
-        if (rc < 0) {
-            result = 2;
-        }
-
-        for (int i = 1; i < 0xffff; i += 100) {
-            memset(buffer, 33, sizeof(char) * i);
-            s2n_send(conn, buffer, i, &blocked);
-        }
-
-        int shutdown_rc = -1;
-        do {
-            shutdown_rc = s2n_shutdown(conn, &blocked);
-        } while (shutdown_rc != 0);
-    }
-
-    s2n_connection_free(conn);
-    s2n_config_free(config);
-
-    /* Give the server a chance to a void a sigpipe */
-    sleep(1);
-
-    s2n_cleanup();
-    s2n_io_pair_close_one_end(io_pair, S2N_CLIENT);
-
-    exit(result);
-}
 
 int client_hello_swap_config(struct s2n_connection *conn, void *ctx)
 {
@@ -183,139 +113,113 @@ int client_hello_fail_handshake(struct s2n_connection *conn, void *ctx)
     return -1;
 }
 
-int s2n_negotiate_nonblocking_ch_cb(struct s2n_connection *conn,
-        struct client_hello_context *ch_ctx, bool server_name_used)
+/* Configures a client connection the same way the original forked mock client
+ * did: TLS1.2, ALPN preferences, no certificate validation, and an SNI. */
+static S2N_RESULT s2n_setup_client(struct s2n_connection *client_conn, struct s2n_config *client_config)
 {
-    s2n_blocked_status blocked;
-    EXPECT_NOT_NULL(conn);
-    /* negotiate handshake, we should pause after the nonblocking callback is invoked */
-    EXPECT_FAILURE_WITH_ERRNO(s2n_negotiate(conn, &blocked), S2N_ERR_ASYNC_BLOCKED);
-    EXPECT_EQUAL(blocked, S2N_BLOCKED_ON_APPLICATION_INPUT);
+    static const char *protocols[] = { "h2", "http/1.1" };
+    RESULT_ENSURE_REF(client_conn);
+    RESULT_ENSURE_REF(client_config);
 
-    /* verify client hello cb has been invoked */
-    EXPECT_EQUAL(ch_ctx->invoked, 1);
+    RESULT_GUARD(s2n_connection_set_tls12_security_policy(client_conn));
+    RESULT_GUARD_POSIX(s2n_config_set_protocol_preferences(client_config, protocols, 2));
+    RESULT_GUARD_POSIX(s2n_config_disable_x509_verification(client_config));
+    RESULT_GUARD_POSIX(s2n_connection_set_config(client_conn, client_config));
+    RESULT_GUARD_POSIX(s2n_set_server_name(client_conn, "example.com"));
 
-    /* while handshake is paused, swap the config if asked */
+    return S2N_RESULT_OK;
+}
+
+/* Drives a handshake to completion when the server uses a non-blocking
+ * client_hello callback. The handshake pauses with S2N_ERR_ASYNC_BLOCKED once
+ * the callback has been invoked. This mirrors the original test's behavior:
+ * optionally swap the config while paused, verify the handshake stays paused
+ * until explicitly unblocked, then mark the callback done and finish. */
+static S2N_RESULT s2n_negotiate_nonblocking_ch_cb(struct s2n_connection *server_conn,
+        struct s2n_connection *client_conn, struct client_hello_context *ch_ctx, bool server_name_used)
+{
+    /* Negotiate until the handshake pauses after the callback is invoked. */
+    RESULT_ENSURE_EQ(s2n_negotiate_test_server_and_client(server_conn, client_conn), S2N_FAILURE);
+    RESULT_ENSURE_EQ(s2n_errno, S2N_ERR_ASYNC_BLOCKED);
+    RESULT_ENSURE_EQ(ch_ctx->invoked, 1);
+
+    /* While the handshake is paused, swap the config if asked. */
     if (ch_ctx->swap_config_nonblocking_mode) {
-        EXPECT_SUCCESS(s2n_connection_set_config(conn, ch_ctx->config));
+        RESULT_GUARD_POSIX(s2n_connection_set_config(server_conn, ch_ctx->config));
     }
-    /* unless explicitly unblocked we should stay paused */
-    EXPECT_FAILURE_WITH_ERRNO(s2n_negotiate(conn, &blocked), S2N_ERR_ASYNC_BLOCKED);
-    EXPECT_EQUAL(blocked, S2N_BLOCKED_ON_APPLICATION_INPUT);
 
-    /* mark the client hello cb complete */
-    EXPECT_SUCCESS(s2n_client_hello_cb_done(conn));
+    /* Unless explicitly unblocked, the handshake stays paused. */
+    RESULT_ENSURE_EQ(s2n_negotiate_test_server_and_client(server_conn, client_conn), S2N_FAILURE);
+    RESULT_ENSURE_EQ(s2n_errno, S2N_ERR_ASYNC_BLOCKED);
+
+    /* Mark the client hello callback complete. */
+    RESULT_GUARD_POSIX(s2n_client_hello_cb_done(server_conn));
     if (server_name_used) {
-        EXPECT_SUCCESS(s2n_connection_server_name_extension_used(conn));
+        RESULT_GUARD_POSIX(s2n_connection_server_name_extension_used(server_conn));
     }
-    return s2n_negotiate(conn, &blocked);
+
+    /* Finish the handshake. */
+    RESULT_GUARD_POSIX(s2n_negotiate_test_server_and_client(server_conn, client_conn));
+
+    return S2N_RESULT_OK;
 }
 
-int s2n_negotiate_blocking_ch_cb(struct s2n_connection *conn, struct client_hello_context *ch_ctx)
+/* Sends a range of payload sizes from the client to the server and verifies
+ * every byte is received correctly. Because the IO pair is non-blocking and
+ * both peers run in the same process, interleave send and recv so a large
+ * payload that fills the in-memory buffer can't deadlock. */
+static S2N_RESULT s2n_send_and_recv_range(struct s2n_connection *send_conn, struct s2n_connection *recv_conn)
 {
-    s2n_blocked_status blocked;
-    EXPECT_NOT_NULL(conn);
+    s2n_blocked_status blocked = S2N_NOT_BLOCKED;
+    uint8_t send_buffer[0xffff] = { 0 };
+    uint8_t recv_buffer[0xffff] = { 0 };
 
-    int rc = s2n_negotiate(conn, &blocked);
-    /* verify client hello cb has been invoked */
-    EXPECT_EQUAL(ch_ctx->invoked, 1);
-    return rc;
-}
+    for (size_t size = 1; size < s2n_array_len(send_buffer); size += 100) {
+        RESULT_CHECKED_MEMSET(&send_buffer[0], 33, size);
 
-int server_recv(struct s2n_connection *conn)
-{
-    static char buffer[0xffff];
-    s2n_blocked_status blocked;
+        size_t total_sent = 0;
+        size_t total_received = 0;
+        while (total_received < size) {
+            if (total_sent < size) {
+                ssize_t sent = s2n_send(send_conn, send_buffer + total_sent,
+                        size - total_sent, &blocked);
+                if (sent > 0) {
+                    total_sent += sent;
+                } else {
+                    RESULT_ENSURE_EQ(s2n_error_get_type(s2n_errno), S2N_ERR_T_BLOCKED);
+                }
+            }
 
-    for (int i = 1; i < 0xffff; i += 100) {
-        char *ptr = buffer;
-        int size = i;
+            ssize_t received = s2n_recv(recv_conn, recv_buffer + total_received,
+                    size - total_received, &blocked);
+            if (received > 0) {
+                total_received += received;
+            } else {
+                RESULT_ENSURE_EQ(s2n_error_get_type(s2n_errno), S2N_ERR_T_BLOCKED);
+            }
+        }
 
-        do {
-            int bytes_read = 0;
-            EXPECT_SUCCESS(bytes_read = s2n_recv(conn, ptr, size, &blocked));
-
-            size -= bytes_read;
-            ptr += bytes_read;
-        } while (size);
-
-        for (int j = 0; j < i; j++) {
-            EXPECT_EQUAL((buffer)[j], 33);
+        RESULT_ENSURE_EQ(total_received, size);
+        for (size_t j = 0; j < size; j++) {
+            RESULT_ENSURE_EQ(recv_buffer[j], 33);
         }
     }
-    return S2N_SUCCESS;
-}
 
-int init_server_conn(struct s2n_connection **conn, struct s2n_test_io_pair *io_pair,
-        struct s2n_config *config)
-{
-    /* This is the server process, close the client end of the pipe */
-    EXPECT_SUCCESS(s2n_io_pair_close_one_end(io_pair, S2N_CLIENT));
-
-    EXPECT_NOT_NULL(*conn = s2n_connection_new(S2N_SERVER));
-
-    /* Set up the connection to read from the fd */
-    EXPECT_SUCCESS(s2n_connection_set_io_pair(*conn, io_pair));
-    EXPECT_SUCCESS(s2n_connection_set_config(*conn, config));
-    return S2N_SUCCESS;
-}
-
-int start_client_conn(struct s2n_test_io_pair *io_pair, pid_t *pid,
-        int expect_failure, int expect_server_name_used)
-{
-    /* Create a pipe */
-    EXPECT_SUCCESS(s2n_io_pair_init(io_pair));
-
-    /* Create a child process */
-    *pid = fork();
-    if (*pid == 0) {
-        /* This is the client process, close the server end of the pipe */
-        EXPECT_SUCCESS(s2n_io_pair_close_one_end(io_pair, S2N_SERVER));
-
-        mock_client(io_pair, expect_failure, expect_server_name_used);
-    }
-    return S2N_SUCCESS;
-}
-
-static int test_case_clean(struct s2n_connection *conn, pid_t client_pid,
-        struct s2n_config *config, struct s2n_test_io_pair *io_pair,
-        struct client_hello_context *ch_ctx, struct s2n_cert_chain_and_key *chain_and_key)
-{
-    s2n_blocked_status blocked;
-    int status = 0;
-
-    EXPECT_SUCCESS(s2n_shutdown(conn, &blocked));
-    EXPECT_EQUAL(waitpid(-1, &status, 0), client_pid);
-    EXPECT_EQUAL(status, 0);
-    /* client process cleans their end, we just need to close server side */
-    EXPECT_SUCCESS(s2n_io_pair_close_one_end(io_pair, S2N_SERVER));
-
-    EXPECT_SUCCESS(s2n_connection_free(conn));
-    EXPECT_SUCCESS(s2n_config_free(config));
-    memset(ch_ctx, 0, sizeof(struct client_hello_context));
-    EXPECT_SUCCESS(s2n_cert_chain_and_key_free(chain_and_key));
-
-    return S2N_SUCCESS;
+    return S2N_RESULT_OK;
 }
 
 int run_test_config_swap_ch_cb(s2n_client_hello_cb_mode cb_mode,
         struct client_hello_context *ch_ctx)
 {
-    struct s2n_test_io_pair io_pair;
-    struct s2n_config *config = NULL;
-    struct s2n_connection *conn = NULL;
-    struct s2n_config *swap_config = NULL;
-    pid_t pid = 0;
-    struct s2n_cert_chain_and_key *chain_and_key = NULL;
-
-    EXPECT_SUCCESS(start_client_conn(&io_pair, &pid, 0, 1));
-
     /* Add application protocols to swapped config */
     static const char *protocols[] = { "h2" };
+
+    DEFER_CLEANUP(struct s2n_cert_chain_and_key *chain_and_key = NULL, s2n_cert_chain_and_key_ptr_free);
     EXPECT_SUCCESS(s2n_test_cert_chain_and_key_new(&chain_and_key, S2N_DEFAULT_TEST_CERT_CHAIN, S2N_DEFAULT_TEST_PRIVATE_KEY));
 
     /* prepare swap_config */
-    EXPECT_NOT_NULL(swap_config = s2n_config_new());
+    DEFER_CLEANUP(struct s2n_config *swap_config = s2n_config_new(), s2n_config_ptr_free);
+    EXPECT_NOT_NULL(swap_config);
     EXPECT_OK(s2n_config_set_tls12_security_policy(swap_config));
     EXPECT_SUCCESS(s2n_config_set_protocol_preferences(swap_config, protocols, 1));
     EXPECT_SUCCESS(s2n_config_add_cert_chain_and_key_to_store(swap_config, chain_and_key));
@@ -325,113 +229,171 @@ int run_test_config_swap_ch_cb(s2n_client_hello_cb_mode cb_mode,
 
     /* Don't set up certificate and private key for the main config, so if
      * handshake succeeds we know that config was swapped */
-    EXPECT_NOT_NULL(config = s2n_config_new());
+    DEFER_CLEANUP(struct s2n_config *config = s2n_config_new(), s2n_config_ptr_free);
+    EXPECT_NOT_NULL(config);
 
     /* Set up the callback */
     EXPECT_SUCCESS(s2n_config_set_client_hello_cb_mode(config, cb_mode));
     EXPECT_SUCCESS(s2n_config_set_client_hello_cb(config, client_hello_swap_config, ch_ctx));
 
-    EXPECT_SUCCESS(init_server_conn(&conn, &io_pair, config));
+    DEFER_CLEANUP(struct s2n_test_io_pair io_pair = { 0 }, s2n_io_pair_close);
+    EXPECT_SUCCESS(s2n_io_pair_init_non_blocking(&io_pair));
+
+    DEFER_CLEANUP(struct s2n_connection *server_conn = s2n_connection_new(S2N_SERVER), s2n_connection_ptr_free);
+    EXPECT_NOT_NULL(server_conn);
+    EXPECT_SUCCESS(s2n_connection_set_config(server_conn, config));
+    EXPECT_SUCCESS(s2n_connection_set_io_pair(server_conn, &io_pair));
+
+    DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
+    EXPECT_NOT_NULL(client_config);
+    DEFER_CLEANUP(struct s2n_connection *client_conn = s2n_connection_new(S2N_CLIENT), s2n_connection_ptr_free);
+    EXPECT_NOT_NULL(client_conn);
+    EXPECT_OK(s2n_setup_client(client_conn, client_config));
+    EXPECT_SUCCESS(s2n_connection_set_io_pair(client_conn, &io_pair));
 
     /* do the handshake */
     if (cb_mode == S2N_CLIENT_HELLO_CB_NONBLOCKING && !ch_ctx->mark_done_during_callback) {
         /* swap the config and mark server_name_used in the async context */
-        EXPECT_SUCCESS(s2n_negotiate_nonblocking_ch_cb(conn, ch_ctx, true));
+        EXPECT_OK(s2n_negotiate_nonblocking_ch_cb(server_conn, client_conn, ch_ctx, true));
     } else {
         /* cb_mode == S2N_CLIENT_HELLO_CB_BLOCKING or NONBLOCKING mode where
          * a non blocking callback marks cb_done during the callback itself
          */
-        EXPECT_SUCCESS(s2n_negotiate_blocking_ch_cb(conn, ch_ctx));
+        EXPECT_SUCCESS(s2n_negotiate_test_server_and_client(server_conn, client_conn));
+        EXPECT_EQUAL(ch_ctx->invoked, 1);
     }
 
     /* Server name and error are as expected with null connection */
     EXPECT_NULL(s2n_get_server_name(NULL));
     EXPECT_EQUAL(s2n_errno, S2N_ERR_NULL);
 
+    /* The client should observe that the server used the server name extension */
+    EXPECT_EQUAL(client_conn->server_name_used, 1);
+
     /* Expect most preferred negotiated protocol which only swap_config had */
-    EXPECT_STRING_EQUAL(s2n_get_application_protocol(conn), protocols[0]);
+    EXPECT_STRING_EQUAL(s2n_get_application_protocol(server_conn), protocols[0]);
 
-    EXPECT_SUCCESS(server_recv(conn));
+    /* Transfer application data from client to server */
+    EXPECT_OK(s2n_send_and_recv_range(client_conn, server_conn));
 
-    EXPECT_SUCCESS(test_case_clean(conn, pid, config, &io_pair, ch_ctx, chain_and_key));
-    EXPECT_SUCCESS(s2n_config_free(swap_config));
+    EXPECT_SUCCESS(s2n_shutdown_test_server_and_client(server_conn, client_conn));
+
+    memset(ch_ctx, 0, sizeof(struct client_hello_context));
     return S2N_SUCCESS;
 }
 
 int run_test_no_config_swap_ch_cb(s2n_client_hello_cb_mode cb_mode, struct client_hello_context *ch_ctx)
 {
-    struct s2n_test_io_pair io_pair;
-    struct s2n_config *config = NULL;
-    struct s2n_connection *conn = NULL;
-    pid_t pid = 0;
-    struct s2n_cert_chain_and_key *chain_and_key = NULL;
-
-    EXPECT_SUCCESS(start_client_conn(&io_pair, &pid, 0, 0));
-
+    DEFER_CLEANUP(struct s2n_cert_chain_and_key *chain_and_key = NULL, s2n_cert_chain_and_key_ptr_free);
     EXPECT_SUCCESS(s2n_test_cert_chain_and_key_new(&chain_and_key, S2N_DEFAULT_TEST_CERT_CHAIN, S2N_DEFAULT_TEST_PRIVATE_KEY));
-    EXPECT_NOT_NULL(config = s2n_config_new());
+
+    DEFER_CLEANUP(struct s2n_config *config = s2n_config_new(), s2n_config_ptr_free);
+    EXPECT_NOT_NULL(config);
     EXPECT_OK(s2n_config_set_tls12_security_policy(config));
     EXPECT_SUCCESS(s2n_config_add_cert_chain_and_key_to_store(config, chain_and_key));
 
     /* Setup ClientHello callback */
     EXPECT_SUCCESS(s2n_config_set_client_hello_cb(config, client_hello_swap_config, ch_ctx));
     EXPECT_SUCCESS(s2n_config_set_client_hello_cb_mode(config, cb_mode));
-    EXPECT_SUCCESS(init_server_conn(&conn, &io_pair, config));
+
+    DEFER_CLEANUP(struct s2n_test_io_pair io_pair = { 0 }, s2n_io_pair_close);
+    EXPECT_SUCCESS(s2n_io_pair_init_non_blocking(&io_pair));
+
+    DEFER_CLEANUP(struct s2n_connection *server_conn = s2n_connection_new(S2N_SERVER), s2n_connection_ptr_free);
+    EXPECT_NOT_NULL(server_conn);
+    EXPECT_SUCCESS(s2n_connection_set_config(server_conn, config));
+    EXPECT_SUCCESS(s2n_connection_set_io_pair(server_conn, &io_pair));
+
+    DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
+    EXPECT_NOT_NULL(client_config);
+    DEFER_CLEANUP(struct s2n_connection *client_conn = s2n_connection_new(S2N_CLIENT), s2n_connection_ptr_free);
+    EXPECT_NOT_NULL(client_conn);
+    EXPECT_OK(s2n_setup_client(client_conn, client_config));
+    EXPECT_SUCCESS(s2n_connection_set_io_pair(client_conn, &io_pair));
 
     /* do the handshake */
     if (cb_mode == S2N_CLIENT_HELLO_CB_NONBLOCKING) {
-        /* swap the config and mark server_name_used in the async context */
-        EXPECT_SUCCESS(s2n_negotiate_nonblocking_ch_cb(conn, ch_ctx, false));
+        /* the callback does not mark server_name_used */
+        EXPECT_OK(s2n_negotiate_nonblocking_ch_cb(server_conn, client_conn, ch_ctx, false));
     } else { /* cb_mode == S2N_CLIENT_HELLO_CB_BLOCKING */
-        EXPECT_SUCCESS(s2n_negotiate_blocking_ch_cb(conn, ch_ctx));
+        EXPECT_SUCCESS(s2n_negotiate_test_server_and_client(server_conn, client_conn));
+        EXPECT_EQUAL(ch_ctx->invoked, 1);
     }
 
     /* Server name and error are as expected with null connection */
     EXPECT_NULL(s2n_get_server_name(NULL));
     EXPECT_EQUAL(s2n_errno, S2N_ERR_NULL);
 
-    EXPECT_SUCCESS(server_recv(conn));
+    /* The server name extension was not marked used in this scenario */
+    EXPECT_EQUAL(client_conn->server_name_used, 0);
 
-    EXPECT_SUCCESS(test_case_clean(conn, pid, config, &io_pair, ch_ctx, chain_and_key));
+    /* Transfer application data from client to server */
+    EXPECT_OK(s2n_send_and_recv_range(client_conn, server_conn));
+
+    EXPECT_SUCCESS(s2n_shutdown_test_server_and_client(server_conn, client_conn));
+
+    memset(ch_ctx, 0, sizeof(struct client_hello_context));
     return S2N_SUCCESS;
 }
 
 int run_test_reject_handshake_ch_cb(s2n_client_hello_cb_mode cb_mode, struct client_hello_context *ch_ctx)
 {
-    struct s2n_test_io_pair io_pair;
-    struct s2n_config *config = NULL;
-    struct s2n_connection *conn = NULL;
-    pid_t pid = 0;
-    s2n_blocked_status blocked;
-    struct s2n_cert_chain_and_key *chain_and_key = NULL;
+    s2n_blocked_status blocked = S2N_NOT_BLOCKED;
 
-    EXPECT_SUCCESS(start_client_conn(&io_pair, &pid, 1, 0));
-
+    DEFER_CLEANUP(struct s2n_cert_chain_and_key *chain_and_key = NULL, s2n_cert_chain_and_key_ptr_free);
     EXPECT_SUCCESS(s2n_test_cert_chain_and_key_new(&chain_and_key, S2N_DEFAULT_TEST_CERT_CHAIN, S2N_DEFAULT_TEST_PRIVATE_KEY));
-    EXPECT_NOT_NULL(config = s2n_config_new());
+
+    DEFER_CLEANUP(struct s2n_config *config = s2n_config_new(), s2n_config_ptr_free);
+    EXPECT_NOT_NULL(config);
     EXPECT_SUCCESS(s2n_config_add_cert_chain_and_key_to_store(config, chain_and_key));
 
     /* Setup ClientHello callback */
     EXPECT_SUCCESS(s2n_config_set_client_hello_cb(config, client_hello_fail_handshake, ch_ctx));
     EXPECT_SUCCESS(s2n_config_set_client_hello_cb_mode(config, cb_mode));
 
-    EXPECT_SUCCESS(init_server_conn(&conn, &io_pair, config));
-    /* If s2n_negotiate fails, it usually would delay with a sleep. In order to
-     * test that we don't blind when CLientHello callback fails the handshake,
-     * disable blinding here */
-    EXPECT_SUCCESS(s2n_connection_set_blinding(conn, S2N_SELF_SERVICE_BLINDING));
+    DEFER_CLEANUP(struct s2n_test_io_pair io_pair = { 0 }, s2n_io_pair_close);
+    EXPECT_SUCCESS(s2n_io_pair_init_non_blocking(&io_pair));
 
-    /* Negotiate the handshake. */
-    EXPECT_FAILURE_WITH_ERRNO(s2n_negotiate(conn, &blocked), S2N_ERR_CANCELLED);
+    DEFER_CLEANUP(struct s2n_connection *server_conn = s2n_connection_new(S2N_SERVER), s2n_connection_ptr_free);
+    EXPECT_NOT_NULL(server_conn);
+    EXPECT_SUCCESS(s2n_connection_set_config(server_conn, config));
+    EXPECT_SUCCESS(s2n_connection_set_io_pair(server_conn, &io_pair));
+    /* If s2n_negotiate fails, it usually would delay with a sleep. In order to
+     * test that we don't blind when ClientHello callback fails the handshake,
+     * disable blinding here */
+    EXPECT_SUCCESS(s2n_connection_set_blinding(server_conn, S2N_SELF_SERVICE_BLINDING));
+
+    DEFER_CLEANUP(struct s2n_config *client_config = s2n_config_new(), s2n_config_ptr_free);
+    EXPECT_NOT_NULL(client_config);
+    DEFER_CLEANUP(struct s2n_connection *client_conn = s2n_connection_new(S2N_CLIENT), s2n_connection_ptr_free);
+    EXPECT_NOT_NULL(client_conn);
+    EXPECT_OK(s2n_setup_client(client_conn, client_config));
+    EXPECT_SUCCESS(s2n_connection_set_io_pair(client_conn, &io_pair));
+
+    /* Negotiate the handshake. The server rejects the connection in the
+     * ClientHello callback, so negotiation fails with S2N_ERR_CANCELLED. */
+    EXPECT_FAILURE_WITH_ERRNO(s2n_negotiate_test_server_and_client(server_conn, client_conn), S2N_ERR_CANCELLED);
 
     /* Check that blinding was not invoked */
-    EXPECT_EQUAL(s2n_connection_get_delay(conn), 0);
+    EXPECT_EQUAL(s2n_connection_get_delay(server_conn), 0);
 
     /* Ensure that callback was invoked */
     EXPECT_EQUAL(ch_ctx->invoked, 1);
 
-    /* shutdown to flush alert */
-    EXPECT_SUCCESS(test_case_clean(conn, pid, config, &io_pair, ch_ctx, chain_and_key));
+    /* The server queues a fatal alert. Flush it to the client and verify the
+     * client receives a handshake_failure (40) alert. */
+    EXPECT_SUCCESS(s2n_shutdown(server_conn, &blocked));
+    for (size_t i = 0; i < 10; i++) {
+        int client_rc = s2n_negotiate(client_conn, &blocked);
+        EXPECT_TRUE(client_rc < 0);
+        if (s2n_error_get_type(s2n_errno) != S2N_ERR_T_BLOCKED) {
+            /* The client read the fatal alert and stopped the handshake. */
+            break;
+        }
+    }
+    EXPECT_EQUAL(s2n_connection_get_alert(client_conn), 40);
+
+    memset(ch_ctx, 0, sizeof(struct client_hello_context));
     return S2N_SUCCESS;
 }
 
