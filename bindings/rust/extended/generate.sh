@@ -60,7 +60,6 @@ fi;
 # make sure everything builds and passes sanity checks
 pushd s2n-tls-sys
 cargo test
-cargo test --release
 cargo publish --dry-run --allow-dirty
 if is_windows; then
     # `fips` is the one feature that can't build on Windows/MinGW, since aws-lc-fips-sys can't be built on MSYS2 MinGW.
@@ -71,6 +70,7 @@ if is_windows; then
     cargo test --features "$windows_features"
     cargo publish --dry-run --allow-dirty --features "$windows_features"
 else
+    cargo test --release
     cargo test --all-features
     cargo publish --dry-run --allow-dirty --all-features
 fi
