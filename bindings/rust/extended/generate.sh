@@ -57,9 +57,19 @@ if [ "$1" == "--skip-tests" ]; then
     exit;
 fi;
 
+# Opt-in build timing diagnostics: run `GENERATE_TIMINGS=1 ./generate.sh` to
+# emit per-crate compile/link reports (target/cargo-timings/cargo-timing.html)
+# for each cargo build/test/run below. Useful for finding slow crates/links
+# (e.g. on Windows/MinGW). Left off `cargo publish`, which rejects `--timings`.
+# Has no effect on the generated output and is off by default (incl. CI).
+timings_flag=""
+if [ "${GENERATE_TIMINGS:-}" = "1" ]; then
+    timings_flag="--timings"
+fi
+
 # make sure everything builds and passes sanity checks
 pushd s2n-tls-sys
-cargo test
+cargo test $timings_flag
 cargo publish --dry-run --allow-dirty
 if is_windows; then
     # `fips` is the one feature that can't build on Windows/MinGW, since aws-lc-fips-sys can't be built on MSYS2 MinGW.
@@ -67,18 +77,18 @@ if is_windows; then
     # The list is read from the manifest, so newly added features are covered automatically.
     windows_features=$(cargo metadata --no-deps --format-version 1 \
         | jq -r '.packages[] | select(.name == "s2n-tls-sys").features | keys - ["default", "fips"] | join(",")')
-    cargo test --features "$windows_features"
+    cargo test --features "$windows_features" $timings_flag
     cargo publish --dry-run --allow-dirty --features "$windows_features"
 else
-    cargo test --release
-    cargo test --all-features
+    cargo test --release $timings_flag
+    cargo test --all-features $timings_flag
     cargo publish --dry-run --allow-dirty --all-features
 fi
 popd
 
 pushd ../standard/integration
 rustc --version || rustup toolchain install
-cargo run
+cargo run $timings_flag
 popd
 
 popd
