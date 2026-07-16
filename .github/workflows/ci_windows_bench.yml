@@ -49,7 +49,6 @@ jobs:
           # host, which can't build build.rs's GCC/Clang flags.
           rustup set default-host x86_64-pc-windows-gnu
           rustup default stable-x86_64-pc-windows-gnu
-          cargo install cargo-criterion
 
       # openssl-src doesn't pass `-j` to make on Windows, so the vendored OpenSSL
       # build runs single-threaded. Export MAKEFLAGS so make parallelizes,
@@ -64,12 +63,18 @@ jobs:
           set -eu
           ./bindings/rust/extended/generate.sh --skip-tests
 
+      # Use plain `cargo bench` rather than `cargo criterion`. cargo-criterion
+      # streams results from the benchmark process over a local TCP socket, which
+      # Windows forcibly resets at the end of the run (os error 10054), failing
+      # the step even though the benchmark completed. Plain criterion has no
+      # socket; it writes results to target/criterion/**/estimates.json, which
+      # the summary step below reads.
       - name: Run handshake benchmark
         shell: msys2 {0}
         working-directory: bindings/rust/standard/benchmarks
         run: |
           set -eu
-          cargo criterion --bench handshake --message-format json > criterion_output.log
+          cargo bench --bench handshake
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -85,25 +90,30 @@ jobs:
           set -eu
           python - <<'EOF'
           import json
+          import os
 
-          log_path = "bindings/rust/standard/benchmarks/criterion_output.log"
+          criterion_dir = "bindings/rust/standard/target/criterion"
           summary_path = "bindings/rust/standard/benchmarks/criterion_summary.csv"
 
           rows = []
-          with open(log_path) as f:
-              for line in f:
-                  line = line.strip()
-                  if not line:
-                      continue
-                  obj = json.loads(line)
-                  if obj.get("reason") != "benchmark-complete":
-                      continue
-                  bench_id = obj["id"]
-                  group, _, category = bench_id.partition("/")
-                  mean = obj["mean"]
-                  assert mean["unit"] == "ns", mean["unit"]
-                  mean_us = mean["estimate"] / 1_000
-                  rows.append((group, category, mean_us))
+          # Criterion writes each result to <group>/<function>/new/estimates.json
+          # (times in ns), with the human-readable id in the sibling benchmark.json.
+          for dirpath, _dirnames, filenames in os.walk(criterion_dir):
+              if os.path.basename(dirpath) != "new" or "estimates.json" not in filenames:
+                  continue
+              with open(os.path.join(dirpath, "estimates.json")) as f:
+                  estimates = json.load(f)
+              mean_ns = estimates["mean"]["point_estimate"]
+              mean_us = mean_ns / 1_000
+
+              full_id = os.path.relpath(os.path.dirname(dirpath), criterion_dir)
+              bench_json = os.path.join(dirpath, "benchmark.json")
+              if os.path.exists(bench_json):
+                  with open(bench_json) as f:
+                      full_id = json.load(f).get("full_id", full_id)
+
+              group, _, category = full_id.partition("/")
+              rows.append((group, category, mean_us))
 
           rows.sort()
 
@@ -126,7 +136,6 @@ jobs:
         with:
           name: windows-handshake-bench-mingw64
           path: |
-            bindings/rust/standard/benchmarks/criterion_output.log
             bindings/rust/standard/benchmarks/criterion_summary.csv
             bindings/rust/standard/target/criterion
           if-no-files-found: warn
