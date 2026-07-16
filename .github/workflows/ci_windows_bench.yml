@@ -1,15 +1,9 @@
 ---
 name: Windows Benchmarks
 
-# Runs the handshake benchmark on Windows (mingw64) and emits the results to
-# CloudWatch. This is intentionally kept separate from ci_windows.yml: that
-# workflow runs on pull_request (including forks), which cannot access AWS
-# credentials. This workflow only runs on push to main and manual dispatch,
-# where OIDC credentials are available.
-#
-# NOTE: Windows metrics are emitted to a dedicated namespace/platform
-# (s2n-tls-bench-windows / Windows-X64-mingw64) so they do not mix with the
-# existing Linux benchmark data (s2n-tls-bench / Linux-X64).
+# Runs the handshake benchmark on Windows (mingw64) and publishes the results
+# as a readable log summary and a downloadable artifact. This is a
+# data-gathering pass: results are not emitted to CloudWatch yet.
 on:
   push:
     branches: [main]
@@ -17,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write # Required for requesting the OIDC JWT to assume the AWS role.
 
 jobs:
   windows-handshake-bench:
@@ -137,20 +130,3 @@ jobs:
             bindings/rust/standard/benchmarks/criterion_summary.csv
             bindings/rust/standard/target/criterion
           if-no-files-found: warn
-
-      - name: Get credentials
-        uses: aws-actions/configure-aws-credentials@v6.2.0
-        with:
-          role-to-assume: arn:aws:iam::024603541914:role/GitHubOIDCRole
-          role-session-name: ${{ github.run_id }}
-          aws-region: us-west-2
-
-      - name: Emit metrics to CloudWatch
-        shell: bash
-        run: |
-          set -eu
-          pip install "boto3[crt]"
-          python .github/bin/criterion_to_cloudwatch.py \
-            --criterion_output_path bindings/rust/standard/benchmarks/criterion_output.log \
-            --namespace s2n-tls-bench-windows \
-            --platform Windows-X64-mingw64
