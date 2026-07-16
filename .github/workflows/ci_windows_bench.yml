@@ -1,0 +1,156 @@
+---
+name: Windows Benchmarks
+
+# Runs the handshake benchmark on Windows (mingw64) and emits the results to
+# CloudWatch. This is intentionally kept separate from ci_windows.yml: that
+# workflow runs on pull_request (including forks), which cannot access AWS
+# credentials. This workflow only runs on push to main and manual dispatch,
+# where OIDC credentials are available.
+#
+# NOTE: Windows metrics are emitted to a dedicated namespace/platform
+# (s2n-tls-bench-windows / Windows-X64-mingw64) so they do not mix with the
+# existing Linux benchmark data (s2n-tls-bench / Linux-X64).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # Required for requesting the OIDC JWT to assume the AWS role.
+
+jobs:
+  windows-handshake-bench:
+    runs-on: windows-latest
+    name: Handshake Benchmark (mingw64)
+    env:
+      # msys2 ships clang, not gcc, but cc-rs defaults to gcc for *-gnu.
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: mingw64
+          update: true
+          install: >-
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-clang-libs
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-go
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-rustup
+            make
+            git
+            diffutils
+            jq
+
+      - name: Install Rust toolchain
+        shell: msys2 {0}
+        run: |
+          set -eu
+          # Force the MinGW gnu host; otherwise rustup picks the runner's MSVC
+          # host, which can't build build.rs's GCC/Clang flags.
+          rustup set default-host x86_64-pc-windows-gnu
+          rustup default stable-x86_64-pc-windows-gnu
+          cargo install cargo-criterion
+
+      # openssl-src doesn't pass `-j` to make on Windows, so the vendored OpenSSL
+      # build runs single-threaded. Export MAKEFLAGS so make parallelizes,
+      # which speeds up the vendored OpenSSL build.
+      - name: Enable parallel make for vendored OpenSSL
+        shell: msys2 {0}
+        run: echo "MAKEFLAGS=-j$(nproc)" >> "$GITHUB_ENV"
+
+      - name: Generate Rust bindings
+        shell: msys2 {0}
+        run: |
+          set -eu
+          ./bindings/rust/extended/generate.sh --skip-tests
+
+      - name: Run handshake benchmark
+        shell: msys2 {0}
+        working-directory: bindings/rust/standard/benchmarks
+        run: |
+          set -eu
+          cargo criterion --bench handshake --message-format json > criterion_output.log
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Produce a human-readable summary of the benchmark results so they can be
+      # read directly from the workflow logs and downloaded as an artifact,
+      # without needing CloudWatch access.
+      - name: Summarize benchmark results
+        shell: bash
+        run: |
+          set -eu
+          python - <<'EOF'
+          import json
+
+          log_path = "bindings/rust/standard/benchmarks/criterion_output.log"
+          summary_path = "bindings/rust/standard/benchmarks/criterion_summary.csv"
+
+          rows = []
+          with open(log_path) as f:
+              for line in f:
+                  line = line.strip()
+                  if not line:
+                      continue
+                  obj = json.loads(line)
+                  if obj.get("reason") != "benchmark-complete":
+                      continue
+                  bench_id = obj["id"]
+                  group, _, category = bench_id.partition("/")
+                  mean = obj["mean"]
+                  assert mean["unit"] == "ns", mean["unit"]
+                  mean_us = mean["estimate"] / 1_000
+                  rows.append((group, category, mean_us))
+
+          rows.sort()
+
+          header = f"{'Benchmark':40} {'Library':12} {'Mean (us)':>12}"
+          print(header)
+          print("-" * len(header))
+          for group, category, mean_us in rows:
+              print(f"{group:40} {category:12} {mean_us:12.3f}")
+
+          with open(summary_path, "w") as out:
+              out.write("benchmark,library,mean_us\n")
+              for group, category, mean_us in rows:
+                  out.write(f"{group},{category},{mean_us:.3f}\n")
+
+          print(f"\nWrote {len(rows)} results to {summary_path}")
+          EOF
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-handshake-bench-mingw64
+          path: |
+            bindings/rust/standard/benchmarks/criterion_output.log
+            bindings/rust/standard/benchmarks/criterion_summary.csv
+            bindings/rust/standard/target/criterion
+          if-no-files-found: warn
+
+      - name: Get credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.0
+        with:
+          role-to-assume: arn:aws:iam::024603541914:role/GitHubOIDCRole
+          role-session-name: ${{ github.run_id }}
+          aws-region: us-west-2
+
+      - name: Emit metrics to CloudWatch
+        shell: bash
+        run: |
+          set -eu
+          pip install "boto3[crt]"
+          python .github/bin/criterion_to_cloudwatch.py \
+            --criterion_output_path bindings/rust/standard/benchmarks/criterion_output.log \
+            --namespace s2n-tls-bench-windows \
+            --platform Windows-X64-mingw64
