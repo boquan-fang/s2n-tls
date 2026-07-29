@@ -1335,7 +1335,14 @@ static int s2n_handshake_handle_sslv2(struct s2n_connection *conn)
 {
     S2N_ERROR_IF(ACTIVE_MESSAGE(conn) != CLIENT_HELLO, S2N_ERR_BAD_MESSAGE);
 
-    /* Add the message to our handshake hashes */
+    /* Add the message to our handshake hashes.
+     *
+     * Note that this happens before the CLIENT_HELLO handler runs, so unlike
+     * every other message the transcript is updated before the client hello
+     * callback can replace the config. Any hash the replacement policy needs but
+     * the original ruled out would therefore be missing this message. In practice
+     * this cannot happen: every policy that permits an SSLv2 ClientHello also
+     * permits pre-TLS1.2, and so requires all of the legacy hashes. */
     struct s2n_blob hashed = { 0 };
     POSIX_GUARD(s2n_blob_init(&hashed, conn->header_in.blob.data + 2, 3));
     POSIX_GUARD(s2n_conn_update_handshake_hashes(conn, &hashed));

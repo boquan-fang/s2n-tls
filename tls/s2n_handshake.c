@@ -122,6 +122,43 @@ int s2n_handshake_require_all_hashes(struct s2n_handshake *handshake)
     return S2N_SUCCESS;
 }
 
+/* Remove any currently required transcript hash that the connection's security
+ * policy could never need.
+ *
+ * This is an intersection, not an assignment, so it is safe to call at any point
+ * in the handshake: it can only ever remove hashes, never re-enable a hash that
+ * s2n_conn_update_required_handshake_hashes has already ruled out, and never mark
+ * a hash as required whose state is missing earlier transcript messages.
+ */
+S2N_RESULT s2n_handshake_restrict_hashes_to_policy(struct s2n_connection *conn)
+{
+    RESULT_ENSURE_REF(conn);
+    struct s2n_handshake *handshake = &conn->handshake;
+
+    const struct s2n_security_policy *policy = conn->security_policy_override;
+    if (policy == NULL && conn->config != NULL) {
+        policy = conn->config->security_policy;
+    }
+    /* Without a policy we can't rule anything out. This is not an error: a
+     * connection is not required to have a config until the handshake begins. */
+    if (policy == NULL) {
+        return S2N_RESULT_OK;
+    }
+
+    /* Recompute only when the effective policy changes. The policy can be
+     * replaced mid-handshake, for example by s2n_connection_set_config in the
+     * client hello callback. */
+    if (policy != handshake->policy_hash_algs_src) {
+        RESULT_GUARD(s2n_security_policy_get_required_hash_algs(policy, handshake->policy_hash_algs));
+        handshake->policy_hash_algs_src = policy;
+    }
+
+    for (size_t i = 0; i < S2N_HASH_ALGS_COUNT; i++) {
+        handshake->required_hash_algs[i] &= handshake->policy_hash_algs[i];
+    }
+    return S2N_RESULT_OK;
+}
+
 static int s2n_handshake_require_hash(struct s2n_handshake *handshake, s2n_hash_algorithm hash_alg)
 {
     handshake->required_hash_algs[hash_alg] = 1;
@@ -157,6 +194,7 @@ int s2n_conn_update_required_handshake_hashes(struct s2n_connection *conn)
          * Therefore all hashes are needed until we're past CLIENT_CERT_VERIFY if client auth is possible. */
         if ((client_cert_auth_type != S2N_CERT_AUTH_NONE) && !client_cert_verify_done) {
             POSIX_GUARD(s2n_handshake_require_all_hashes(&conn->handshake));
+            POSIX_GUARD_RESULT(s2n_handshake_restrict_hashes_to_policy(conn));
             return S2N_SUCCESS;
         }
     }
@@ -189,6 +227,7 @@ int s2n_conn_update_required_handshake_hashes(struct s2n_connection *conn)
             POSIX_BAIL(S2N_ERR_SAFETY);
     }
 
+    POSIX_GUARD_RESULT(s2n_handshake_restrict_hashes_to_policy(conn));
     return S2N_SUCCESS;
 }
 
