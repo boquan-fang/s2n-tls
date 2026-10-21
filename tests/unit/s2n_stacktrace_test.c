@@ -26,16 +26,22 @@ int main(int argc, char **argv)
 {
     BEGIN_TEST();
     EXPECT_SUCCESS(s2n_disable_tls13_in_test());
-#ifdef S2N_STACKTRACE
     EXPECT_SUCCESS(s2n_stack_traces_enabled_set(true));
+
+#ifdef S2N_STACKTRACE
     struct s2n_stacktrace trace;
     /* If nothing has errored yet, we have no stacktrace */
     EXPECT_SUCCESS(s2n_get_stacktrace(&trace));
     EXPECT_NULL(trace.trace);
     EXPECT_EQUAL(trace.trace_size, 0);
+#endif
 
-    /* Raise an error, and see that it generates a stacktrace */
-    EXPECT_FAILURE(raises_error());
+    /* Raising an error must report that error. Without stacktrace support,
+     * this is where the error path used to recurse into itself. */
+    EXPECT_FAILURE_WITH_ERRNO(raises_error(), S2N_ERR_INVALID_ARGUMENT);
+
+#ifdef S2N_STACKTRACE
+    /* The error generated a stacktrace */
     EXPECT_SUCCESS(s2n_get_stacktrace(&trace));
     EXPECT_NOT_NULL(trace.trace);
     EXPECT_NOT_EQUAL(trace.trace_size, 0);
@@ -47,11 +53,6 @@ int main(int argc, char **argv)
 
     /* Free the stacktrace to avoid memory leaks */
     EXPECT_SUCCESS(s2n_free_stacktrace());
-    END_TEST();
-#else
-    /* Enabling unsupported stack traces must not crash the process */
-    EXPECT_SUCCESS(s2n_stack_traces_enabled_set(true));
-    EXPECT_FAILURE_WITH_ERRNO(raises_error(), S2N_ERR_INVALID_ARGUMENT);
-    END_TEST();
 #endif
+    END_TEST();
 }
