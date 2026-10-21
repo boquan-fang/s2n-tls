@@ -496,13 +496,10 @@ int s2n_free_stacktrace(void)
     S2N_ERROR(S2N_ERR_UNIMPLEMENTED);
 }
 
+/* No-op in builds without the stacktrace enabled. */
 int s2n_calculate_stacktrace(void)
 {
-    if (!s_s2n_stack_traces_enabled) {
-        return S2N_SUCCESS;
-    }
-
-    S2N_ERROR(S2N_ERR_UNIMPLEMENTED);
+    return S2N_SUCCESS;
 }
 
 int s2n_get_stacktrace(struct s2n_stacktrace *trace)

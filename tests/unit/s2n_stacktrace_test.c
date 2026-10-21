@@ -49,6 +49,9 @@ int main(int argc, char **argv)
     EXPECT_SUCCESS(s2n_free_stacktrace());
     END_TEST();
 #else
+    /* Enabling unsupported stack traces must not crash the process */
+    EXPECT_SUCCESS(s2n_stack_traces_enabled_set(true));
+    EXPECT_FAILURE_WITH_ERRNO(raises_error(), S2N_ERR_INVALID_ARGUMENT);
     END_TEST();
 #endif
 }
